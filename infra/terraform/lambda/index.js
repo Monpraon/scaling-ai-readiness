@@ -19,7 +19,7 @@
    ───────────────────────────────────────────────────────── */
 
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
-const { DynamoDBDocumentClient, UpdateCommand } = require("@aws-sdk/lib-dynamodb");
+const { DynamoDBDocumentClient, UpdateCommand, GetCommand } = require("@aws-sdk/lib-dynamodb");
 const { BedrockRuntimeClient, ConverseCommand } = require("@aws-sdk/client-bedrock-runtime");
 
 const REGION = process.env.AWS_REGION;
@@ -38,14 +38,91 @@ const bedrock = new BedrockRuntimeClient({ region: REGION });
 const CORS = {
   "Access-Control-Allow-Origin": CORS_ORIGIN,
   "Access-Control-Allow-Headers": "Content-Type",
-  "Access-Control-Allow-Methods": "POST,OPTIONS",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
 };
+
+// Risk/component ids we track in aggregate (must match the frontend engine).
+const RISK_IDS = [
+  "secrets",
+  "verify-secrets",
+  "no-backend",
+  "no-auth",
+  "browser-data",
+  "sync-ai",
+  "uploads",
+  "no-logs",
+  "no-governance",
+];
 
 function reply(statusCode, body) {
   return { statusCode, headers: { "Content-Type": "application/json", ...CORS }, body: JSON.stringify(body) };
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+// Atomic +1 on a counter item (no TTL — stats are cumulative).
+async function bumpKey(pk) {
+  await ddb.send(
+    new UpdateCommand({
+      TableName: TABLE,
+      Key: { pk },
+      UpdateExpression: "ADD #n :one",
+      ExpressionAttributeNames: { "#n": "n" },
+      ExpressionAttributeValues: { ":one": 1 },
+    })
+  );
+}
+
+async function readKey(pk) {
+  const out = await ddb.send(new GetCommand({ TableName: TABLE, Key: { pk } }));
+  return out.Item && typeof out.Item.n === "number" ? out.Item.n : 0;
+}
+
+/* ── Anonymous aggregate stats ──────────────────────────────
+   We store ONLY counters — never repo content, URLs, or anything
+   identifying. Each completed assessment bumps a handful of tallies. */
+
+async function recordStats(p) {
+  const ready = p && p.ready === true;
+  const target = [10, 100, 1000, 10000].includes(p && p.target) ? p.target : 0;
+  const cloud = ["aws", "gcp", "azure", "huawei"].includes(p && p.cloud) ? p.cloud : "aws";
+  const source = ["repo", "prototype", "demo"].includes(p && p.source) ? p.source : "prototype";
+  const ids = Array.isArray(p && p.riskIds) ? p.riskIds.filter((id) => RISK_IDS.includes(id)) : [];
+
+  const ops = [bumpKey("stat#total"), bumpKey(ready ? "stat#ready" : "stat#notready"), bumpKey(`stat#cloud#${cloud}`), bumpKey(`stat#source#${source}`)];
+  if (target) ops.push(bumpKey(`stat#target#${target}`));
+  for (const id of ids) ops.push(bumpKey(`stat#risk#${id}`));
+  await Promise.all(ops);
+  return reply(200, { ok: true });
+}
+
+async function statsSummary() {
+  const targets = [10, 100, 1000, 10000];
+  const clouds = ["aws", "gcp", "azure", "huawei"];
+  const sources = ["repo", "prototype", "demo"];
+  const keys = [
+    "stat#total",
+    "stat#ready",
+    "stat#notready",
+    ...targets.map((t) => `stat#target#${t}`),
+    ...clouds.map((c) => `stat#cloud#${c}`),
+    ...sources.map((s) => `stat#source#${s}`),
+    ...RISK_IDS.map((id) => `stat#risk#${id}`),
+  ];
+  const vals = await Promise.all(keys.map(readKey));
+  const m = {};
+  keys.forEach((k, i) => (m[k] = vals[i]));
+
+  return reply(200, {
+    total: m["stat#total"],
+    ready: m["stat#ready"],
+    notReady: m["stat#notready"],
+    targets: Object.fromEntries(targets.map((t) => [t, m[`stat#target#${t}`]])),
+    clouds: Object.fromEntries(clouds.map((c) => [c, m[`stat#cloud#${c}`]])),
+    sources: Object.fromEntries(sources.map((s) => [s, m[`stat#source#${s}`]])),
+    risks: Object.fromEntries(RISK_IDS.map((id) => [id, m[`stat#risk#${id}`]])),
+  });
+}
 
 async function bumpBudget() {
   const ttl = Math.floor(Date.now() / 1000) + BUDGET_TTL_DAYS * 86400;
@@ -130,6 +207,8 @@ exports.handler = async (event) => {
 
   try {
     if (method === "POST" && path === "/analyze") return await analyze(body);
+    if (method === "POST" && path === "/stats") return await recordStats(body);
+    if (method === "GET" && path === "/stats/summary") return await statsSummary();
     return reply(404, { error: "not found" });
   } catch (e) {
     console.error("handler error", e);

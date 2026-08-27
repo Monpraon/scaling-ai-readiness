@@ -153,6 +153,8 @@ resource "aws_apigatewayv2_integration" "lambda" {
 locals {
   routes = [
     "POST /analyze",
+    "POST /stats",
+    "GET /stats/summary",
   ]
 }
 

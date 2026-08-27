@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   SCALES,
@@ -9,13 +9,15 @@ import {
   visibleQuestions,
   assessRisks,
   nextFixes,
+  isReady,
   ROADMAP,
   roadmapIndexForScale,
   architectureForScale,
   reportToMarkdown,
   DEMO,
 } from "./engine";
-import { explainFindings, hasBackend } from "./api";
+import { scanRepo, RepoAccessError } from "./scan";
+import { explainFindings, recordStats, loadStats, hasBackend } from "./api";
 
 const BRAND = {
   name: import.meta.env.VITE_BRAND_NAME ?? "Scale My AI",
@@ -99,6 +101,46 @@ const UI = {
   },
   download: { en: "↓ Download report (.md)", th: "↓ ดาวน์โหลดรายงาน (.md)" },
   again: { en: "Run another assessment", th: "ประเมินใหม่อีกครั้ง" },
+  consentTitle: { en: "Permission to read your repo", th: "ขออนุญาตอ่าน repo ของคุณ" },
+  consentBody: {
+    en: "To analyze your app we read your public repository's code in your browser. We do NOT store your code or the repo URL. We keep only anonymous statistics about the components we detect (e.g. how many apps have auth).",
+    th: "เพื่อวิเคราะห์แอป เราจะอ่านโค้ดใน repo สาธารณะของคุณผ่านเบราว์เซอร์ เราไม่เก็บโค้ดหรือ URL ของ repo เราเก็บเพียงสถิติแบบไม่ระบุตัวตนเกี่ยวกับองค์ประกอบที่ตรวจพบ (เช่น มีกี่แอปที่มีระบบล็อกอิน)",
+  },
+  consentAgree: { en: "I agree — scan my repo", th: "ฉันยินยอม — สแกน repo" },
+  scanning: { en: "Reading your repo…", th: "กำลังอ่าน repo…" },
+  scanned: { en: "Here's what we found", th: "นี่คือสิ่งที่เราตรวจพบ" },
+  scanReview: { en: "Review & adjust on the next step.", th: "ตรวจสอบและปรับได้ในขั้นตอนถัดไป" },
+  filesScanned: { en: "files scanned", th: "ไฟล์ที่สแกน" },
+  errPrivate: {
+    en: "We couldn't read this repo — it may be private or not exist. The public tool only reads public repos. You can make it public, or continue with the questionnaire.",
+    th: "อ่าน repo นี้ไม่ได้ — อาจเป็นแบบส่วนตัวหรือไม่มีอยู่ เครื่องมือสาธารณะอ่านได้เฉพาะ repo สาธารณะ คุณอาจตั้งเป็นสาธารณะ หรือทำแบบสอบถามต่อ",
+  },
+  errRate: { en: "GitHub rate limit reached. Try again shortly, or continue with the questionnaire.", th: "ถึงขีดจำกัดการเรียก GitHub ลองใหม่อีกครั้ง หรือทำแบบสอบถามต่อ" },
+  errInvalid: { en: "That doesn't look like a GitHub URL.", th: "ลิงก์นี้ไม่เหมือน URL ของ GitHub" },
+  errScan: { en: "Couldn't scan that repo. You can continue with the questionnaire.", th: "สแกน repo ไม่สำเร็จ คุณทำแบบสอบถามต่อได้" },
+  continueManual: { en: "Continue with the questionnaire →", th: "ทำแบบสอบถามต่อ →" },
+  reviewAnswers: { en: "Review answers →", th: "ตรวจคำตอบ →" },
+  statsLink: { en: "See community stats", th: "ดูสถิติรวม" },
+  statsTitle: { en: "What we're seeing", th: "ภาพรวมที่เราเห็น" },
+  statsSub: { en: "Anonymous, aggregate — no code or URLs stored.", th: "ไม่ระบุตัวตนและเป็นภาพรวม — ไม่เก็บโค้ดหรือ URL" },
+  statAnalyzed: { en: "apps analysed", th: "แอปที่วิเคราะห์" },
+  statReady: { en: "Ready to scale", th: "พร้อมสเกล" },
+  statNotReady: { en: "Not yet ready", th: "ยังไม่พร้อม" },
+  statTopGaps: { en: "Most common gaps", th: "ช่องว่างที่พบบ่อย" },
+  statByScale: { en: "By target scale", th: "ตามสเกลเป้าหมาย" },
+  statNone: { en: "No data yet — be the first to run an assessment.", th: "ยังไม่มีข้อมูล — เป็นคนแรกที่ประเมินได้เลย" },
+};
+
+const RISK_LABEL = {
+  secrets: { en: "Exposed API key", th: "คีย์ API ถูกเปิดเผย" },
+  "verify-secrets": { en: "Unverified key location", th: "ไม่ยืนยันที่เก็บคีย์" },
+  "no-backend": { en: "No backend", th: "ไม่มีหลังบ้าน" },
+  "no-auth": { en: "No authentication", th: "ไม่มีระบบล็อกอิน" },
+  "browser-data": { en: "Browser-only data", th: "ข้อมูลอยู่ในเบราว์เซอร์" },
+  "sync-ai": { en: "Synchronous AI", th: "AI แบบซิงโครนัส" },
+  uploads: { en: "Uploads, no storage", th: "อัปโหลดไม่มีที่เก็บ" },
+  "no-logs": { en: "No monitoring", th: "ไม่มีการเฝ้าระวัง" },
+  "no-governance": { en: "No AI governance", th: "ไม่มีการกำกับ AI" },
 };
 
 function downloadMarkdown(filename, text) {
@@ -281,11 +323,25 @@ export default function App() {
         </div>
 
         {view === "home" && (
-          <Home onPick={(p) => { setPath(p); setView("input"); }} onDemo={startDemo} onQR={() => setView("qr")} />
+          <Home
+            onPick={(p) => { setPath(p); setView("input"); }}
+            onDemo={startDemo}
+            onQR={() => setView("qr")}
+            onStats={() => setView("stats")}
+          />
         )}
         {view === "qr" && <ShareQR onBack={() => setView("home")} />}
+        {view === "stats" && <StatsView onBack={() => setView("home")} />}
         {view === "input" && (
-          <InputScreen path={path} meta={meta} setMeta={setMeta} target={target} setTarget={setTarget} onNext={() => setView("assess")} />
+          <InputScreen
+            path={path}
+            meta={meta}
+            setMeta={setMeta}
+            target={target}
+            setTarget={setTarget}
+            onNext={() => setView("assess")}
+            onScanned={(detected) => { setAnswers(detected); setView("assess"); }}
+          />
         )}
         {view === "assess" && (
           <Assess answers={answers} setAnswers={setAnswers} onDone={() => setView("report")} onBack={() => setView("input")} />
@@ -318,7 +374,110 @@ function ShareQR({ onBack }) {
   );
 }
 
-function Home({ onPick, onDemo, onQR }) {
+function StatsView({ onBack }) {
+  const [state, setState] = useState("busy"); // busy | done | error
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setData(await loadStats());
+        setState("done");
+      } catch {
+        setState("error");
+      }
+    })();
+  }, []);
+
+  const total = data?.total || 0;
+  const readyPct = total ? Math.round((data.ready / total) * 100) : 0;
+  const riskEntries = data
+    ? Object.entries(data.risks).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1])
+    : [];
+  const maxRisk = riskEntries.reduce((m, [, n]) => Math.max(m, n), 1);
+  const maxScale = data ? Math.max(...SCALES.map((s) => data.targets[s] || 0), 1) : 1;
+
+  return (
+    <div>
+      <Eyebrow en={UI.statsTitle.en} th={UI.statsTitle.th} />
+      <h2 style={{ fontSize: 23, fontWeight: 800, margin: "0 0 2px" }}>{UI.statAnalyzed.en}</h2>
+      <p style={{ color: C.faint, fontSize: 12.5, margin: "0 0 18px" }}>{UI.statsSub.en} · {UI.statsSub.th}</p>
+
+      {state === "busy" && <p style={{ color: C.mut, fontSize: 13 }}>…</p>}
+      {state === "error" && <p style={{ color: C.amber, fontSize: 13 }}>—</p>}
+
+      {state === "done" && total === 0 && (
+        <div style={{ background: C.card, border: `1px dashed ${C.line}`, borderRadius: 14, padding: "28px 18px", textAlign: "center", color: C.faint, fontSize: 13.5 }}>
+          {UI.statNone.en}<br />{UI.statNone.th}
+        </div>
+      )}
+
+      {state === "done" && total > 0 && (
+        <div style={{ display: "grid", gap: 20 }}>
+          <div style={{ display: "flex", gap: 10 }}>
+            <Stat big value={total} label={UI.statAnalyzed} />
+            <Stat value={`${readyPct}%`} label={UI.statReady} color={C.green} />
+            <Stat value={total - data.ready} label={UI.statNotReady} color={C.amber} />
+          </div>
+
+          <div>
+            <div style={{ fontSize: 12, color: C.mut, fontWeight: 700, marginBottom: 10 }}>{UI.statTopGaps.en} · {UI.statTopGaps.th}</div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {riskEntries.map(([id, n]) => (
+                <div key={id}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 4 }}>
+                    <span>{(RISK_LABEL[id] || { en: id }).en} · {(RISK_LABEL[id] || { th: id }).th}</span>
+                    <span style={{ fontWeight: 800, color: C.mut }}>{n}</span>
+                  </div>
+                  <Bar pct={(n / maxRisk) * 100} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 12, color: C.mut, fontWeight: 700, marginBottom: 10 }}>{UI.statByScale.en} · {UI.statByScale.th}</div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {SCALES.map((s) => (
+                <div key={s}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 4 }}>
+                    <span>{s.toLocaleString()} · {SCALE_LABEL[s].th}</span>
+                    <span style={{ fontWeight: 800, color: C.mut }}>{data.targets[s] || 0}</span>
+                  </div>
+                  <Bar pct={((data.targets[s] || 0) / maxScale) * 100} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ marginTop: 22 }}>
+        <BiBtn ghost label={UI.back} onClick={onBack} />
+      </div>
+    </div>
+  );
+}
+
+function Stat({ value, label, color, big }) {
+  return (
+    <div style={{ flex: 1, background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: "14px 12px", textAlign: "center" }}>
+      <div style={{ fontSize: big ? 30 : 24, fontWeight: 900, color: color || C.accent }}>{value}</div>
+      <div style={{ fontSize: 11, color: C.mut, marginTop: 2 }}>{label.en}</div>
+      <div style={{ fontSize: 10.5, color: C.faint }}>{label.th}</div>
+    </div>
+  );
+}
+
+function Bar({ pct }) {
+  return (
+    <div style={{ height: 8, background: C.line, borderRadius: 5, overflow: "hidden" }}>
+      <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg, ${C.accentDim}, ${C.accent})`, borderRadius: 5 }} />
+    </div>
+  );
+}
+
+function Home({ onPick, onDemo, onQR, onStats }) {
   return (
     <div>
       <Eyebrow en={UI.eyebrowHome.en} th={UI.eyebrowHome.th} />
@@ -351,6 +510,14 @@ function Home({ onPick, onDemo, onQR }) {
         >
           {UI.qrLink.en} · {UI.qrLink.th}
         </button>
+        {hasBackend && (
+          <button
+            onClick={onStats}
+            style={{ display: "block", marginTop: 10, background: "none", border: "none", color: C.faint, fontSize: 12.5, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 3 }}
+          >
+            {UI.statsLink.en} · {UI.statsLink.th}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -382,10 +549,42 @@ function DoorCard({ title, sub, onClick, primary }) {
   );
 }
 
-function InputScreen({ path, meta, setMeta, target, setTarget, onNext }) {
+const DET_LABEL = {
+  aiCalls: { en: "Calls an AI model", th: "เรียกโมเดล AI" },
+  secretsInClient: { en: "Key in frontend", th: "คีย์อยู่ฝั่งหน้าเว็บ" },
+  hasBackend: { en: "Has a backend", th: "มีหลังบ้าน" },
+  fileUploads: { en: "File uploads", th: "อัปโหลดไฟล์" },
+  hasLogging: { en: "Logging/monitoring", th: "มีการเฝ้าระวัง" },
+};
+const yn = (v) => (v === true ? { en: "Yes", th: "ใช่" } : v === false ? { en: "No", th: "ไม่" } : { en: "—", th: "—" });
+
+function InputScreen({ path, meta, setMeta, target, setTarget, onNext, onScanned }) {
   const isRepo = path === "repo";
   const head = isRepo ? UI.yourRepo : UI.yourProto;
   const descLabel = isRepo ? UI.descOpt : UI.descReq;
+
+  const [consent, setConsent] = useState(false);
+  const [scanState, setScanState] = useState("idle"); // idle | busy | done | error
+  const [scanErr, setScanErr] = useState(null);
+  const [result, setResult] = useState(null);
+
+  const runScan = async () => {
+    setScanState("busy");
+    setScanErr(null);
+    setResult(null);
+    try {
+      const r = await scanRepo(meta.url);
+      setResult(r);
+      setScanState("done");
+    } catch (e) {
+      const kind = e instanceof RepoAccessError ? e.kind : "error";
+      setScanErr(
+        kind === "invalid" ? UI.errInvalid : kind === "ratelimited" ? UI.errRate : kind === "private_or_missing" ? UI.errPrivate : UI.errScan
+      );
+      setScanState("error");
+    }
+  };
+
   return (
     <div>
       <Eyebrow en={head.en} th={head.th} />
@@ -393,10 +592,58 @@ function InputScreen({ path, meta, setMeta, target, setTarget, onNext }) {
       <p style={{ color: C.mut, fontSize: 13.5, margin: "0 0 18px" }}>{UI.tellUs.th}</p>
 
       {isRepo && (
-        <div style={{ marginBottom: 16 }}>
-          <Label bi={UI.ghUrl} />
-          <input value={meta.url} onChange={(e) => setMeta({ ...meta, url: e.target.value })} placeholder="https://github.com/you/your-app" style={inputStyle} />
-        </div>
+        <>
+          <div style={{ marginBottom: 14 }}>
+            <Label bi={UI.ghUrl} />
+            <input value={meta.url} onChange={(e) => setMeta({ ...meta, url: e.target.value })} placeholder="https://github.com/you/your-app" style={inputStyle} />
+          </div>
+
+          {/* consent */}
+          <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: "13px 15px", marginBottom: 12 }}>
+            <div style={{ fontWeight: 800, fontSize: 13.5 }}>{UI.consentTitle.en}</div>
+            <div style={{ fontWeight: 700, fontSize: 12.5, color: C.mut, marginBottom: 8 }}>{UI.consentTitle.th}</div>
+            <p style={{ fontSize: 12.5, color: C.mut, lineHeight: 1.5, margin: "0 0 4px" }}>{UI.consentBody.en}</p>
+            <p style={{ fontSize: 11.5, color: C.faint, lineHeight: 1.5, margin: "0 0 10px" }}>{UI.consentBody.th}</p>
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 9, cursor: "pointer" }}>
+              <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} style={{ marginTop: 3, accentColor: C.accent }} />
+              <span style={{ fontSize: 13, fontWeight: 700 }}>
+                {UI.consentAgree.en}
+                <span style={{ display: "block", color: C.mut, fontSize: 11.5, fontWeight: 500 }}>{UI.consentAgree.th}</span>
+              </span>
+            </label>
+          </div>
+
+          {scanState !== "done" && (
+            <div style={{ marginBottom: 14 }}>
+              <BiBtn label={UI.consentAgree} onClick={runScan} disabled={!consent || !meta.url.trim() || scanState === "busy"} />
+              {scanState === "busy" && <p style={{ color: C.mut, fontSize: 12.5, marginTop: 8 }}>{UI.scanning.en} · {UI.scanning.th}</p>}
+              {scanState === "error" && scanErr && (
+                <p style={{ color: C.amber, fontSize: 12.5, marginTop: 8, lineHeight: 1.5 }}>{scanErr.en}<br /><span style={{ color: C.faint }}>{scanErr.th}</span></p>
+              )}
+            </div>
+          )}
+
+          {scanState === "done" && result && (
+            <div style={{ background: C.cardUp, border: `1px solid ${C.accentDim}`, borderRadius: 12, padding: "13px 15px", marginBottom: 14 }}>
+              <div style={{ fontWeight: 800, fontSize: 13.5 }}>{UI.scanned.en}</div>
+              <div style={{ fontWeight: 700, fontSize: 12, color: C.mut, marginBottom: 4 }}>{UI.scanned.th}</div>
+              <div style={{ fontSize: 11.5, color: C.faint, marginBottom: 10 }}>
+                {result.repo} · {result.filesScanned} {UI.filesScanned.en}
+              </div>
+              <div style={{ display: "grid", gap: 6 }}>
+                {Object.keys(DET_LABEL).map((k) => (
+                  <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
+                    <span style={{ color: C.mut }}>{DET_LABEL[k].en} · {DET_LABEL[k].th}</span>
+                    <span style={{ fontWeight: 700, color: result.answers[k] === true ? C.amber : C.green }}>
+                      {yn(result.answers[k]).en}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p style={{ fontSize: 11.5, color: C.faint, marginTop: 10, marginBottom: 0 }}>{UI.scanReview.en} · {UI.scanReview.th}</p>
+            </div>
+          )}
+        </>
       )}
 
       <div style={{ marginBottom: 18 }}>
@@ -404,14 +651,14 @@ function InputScreen({ path, meta, setMeta, target, setTarget, onNext }) {
         <textarea
           value={meta.description}
           onChange={(e) => setMeta({ ...meta, description: e.target.value })}
-          rows={4}
+          rows={3}
           placeholder={`${UI.descPh.en}\n${UI.descPh.th}`}
           style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }}
         />
       </div>
 
       <Label bi={UI.howMany} />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, marginBottom: 24 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, marginBottom: 22 }}>
         {SCALES.map((s) => (
           <button
             key={s}
@@ -433,7 +680,11 @@ function InputScreen({ path, meta, setMeta, target, setTarget, onNext }) {
         ))}
       </div>
 
-      <BiBtn full label={UI.continue} onClick={onNext} />
+      {isRepo && scanState === "done" && result ? (
+        <BiBtn full label={UI.reviewAnswers} onClick={() => onScanned(result.answers)} />
+      ) : (
+        <BiBtn full label={isRepo ? UI.continueManual : UI.continue} onClick={onNext} ghost={isRepo} />
+      )}
     </div>
   );
 }
@@ -524,6 +775,18 @@ function Report({ path, meta, answers, target, onAgain }) {
 
   const [aiState, setAiState] = useState("idle");
   const [aiText, setAiText] = useState("");
+
+  // Record one anonymous, content-free stat when the report is produced.
+  useEffect(() => {
+    recordStats({
+      ready: isReady(risks),
+      riskIds: risks.map((r) => r.id),
+      target,
+      cloud,
+      source: path === "repo" ? "repo" : path === "demo" ? "demo" : "prototype",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const explain = async () => {
     setAiState("busy");

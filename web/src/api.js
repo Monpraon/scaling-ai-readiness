@@ -16,6 +16,29 @@ const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/+$/, "");
 
 export const hasBackend = Boolean(API_BASE);
 
+// Fire-and-forget anonymous stats. Never blocks the UI; never sends
+// repo content or URLs — only aggregate signals.
+export async function recordStats(payload) {
+  if (!hasBackend) return;
+  try {
+    await fetch(`${API_BASE}/stats`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    });
+  } catch {
+    /* stats are best-effort */
+  }
+}
+
+export async function loadStats() {
+  if (!hasBackend) throw new Error("no-backend");
+  const res = await fetch(`${API_BASE}/stats/summary`);
+  if (!res.ok) throw new Error(`stats ${res.status}`);
+  return res.json();
+}
+
 export async function explainFindings({ app_type, description, target_users, findings, cloud }) {
   if (!hasBackend) throw new Error("no-backend");
   const res = await fetch(`${API_BASE}/analyze`, {

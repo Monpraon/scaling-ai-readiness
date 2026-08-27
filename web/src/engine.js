@@ -74,7 +74,7 @@ export const QUESTIONS = [
     th: "มี API key หรือความลับเก็บอยู่ในเบราว์เซอร์ / โค้ดฝั่งผู้ใช้หรือไม่",
     opts: [
       { en: "Yes", th: "ใช่", value: true },
-      { en: "Not sure", th: "ไม่แน่ใจ", value: true },
+      { en: "Not sure", th: "ไม่แน่ใจ", value: null },
       { en: "No", th: "ไม่มี", value: false },
     ],
   },
@@ -170,7 +170,9 @@ export function assessRisks(a, target) {
   const massive = target >= 10000;
   const spiky = a.workload === "bursty" || a.workload === "concurrent";
 
-  if (a.secretsInClient) {
+  // Only assert exposure when we KNOW it (explicit "yes" or detected in
+  // code). "Not sure" (null) must never be treated as a confirmed leak.
+  if (a.secretsInClient === true) {
     risks.push({
       id: "secrets",
       sev: "high",
@@ -186,7 +188,25 @@ export function assessRisks(a, target) {
     });
   }
 
-  if (a.aiCalls && a.aiSync && (huge || spiky)) {
+  // Unknown ≠ bad. If they use AI but weren't sure where the key lives,
+  // gently suggest verifying — not a confirmed risk.
+  if (a.aiCalls === true && a.secretsInClient == null) {
+    risks.push({
+      id: "verify-secrets",
+      sev: "low",
+      title: { en: "Confirm where your API key lives", th: "ตรวจสอบว่า API key อยู่ที่ไหน" },
+      why: {
+        en: "You weren't sure. If a model key sits in the browser it can be read and abused — but many platforms keep it server-side, so this is worth checking, not assuming.",
+        th: "คุณยังไม่แน่ใจ ถ้าคีย์ของโมเดลอยู่ในเบราว์เซอร์อาจถูกอ่านและนำไปใช้ผิด แต่หลายแพลตฟอร์มเก็บไว้ฝั่งเซิร์ฟเวอร์อยู่แล้ว จึงควรตรวจสอบ ไม่ใช่สันนิษฐาน",
+      },
+      fix: {
+        en: "Check your frontend for a hardcoded key. If there isn't one, you're fine; if there is, move it to a backend.",
+        th: "ตรวจโค้ดฝั่งหน้าเว็บว่ามีคีย์ฝังอยู่ไหม ถ้าไม่มีก็ปลอดภัย ถ้ามีให้ย้ายไปฝั่งหลังบ้าน",
+      },
+    });
+  }
+
+  if (a.aiCalls === true && a.aiSync === true && (huge || spiky)) {
     risks.push({
       id: "sync-ai",
       sev: "high",
@@ -202,7 +222,7 @@ export function assessRisks(a, target) {
     });
   }
 
-  if (!a.hasAuth && big) {
+  if (a.hasAuth === false && big) {
     risks.push({
       id: "no-auth",
       sev: "high",
@@ -234,7 +254,7 @@ export function assessRisks(a, target) {
     });
   }
 
-  if (!a.hasBackend && (a.aiCalls || big)) {
+  if (a.hasBackend === false && (a.aiCalls === true || big)) {
     risks.push({
       id: "no-backend",
       sev: "high",
@@ -250,7 +270,7 @@ export function assessRisks(a, target) {
     });
   }
 
-  if (a.fileUploads && a.dataStore !== "files" && big) {
+  if (a.fileUploads === true && a.dataStore !== "files" && big) {
     risks.push({
       id: "uploads",
       sev: "medium",
@@ -266,7 +286,7 @@ export function assessRisks(a, target) {
     });
   }
 
-  if (!a.hasLogging && huge) {
+  if (a.hasLogging === false && huge) {
     risks.push({
       id: "no-logs",
       sev: "medium",
@@ -282,7 +302,7 @@ export function assessRisks(a, target) {
     });
   }
 
-  if (a.aiCalls && !a.humanReview && massive) {
+  if (a.aiCalls === true && a.humanReview === false && massive) {
     risks.push({
       id: "no-governance",
       sev: "medium",
@@ -313,6 +333,7 @@ const RISK_PRIORITY = [
   "uploads",
   "no-logs",
   "no-governance",
+  "verify-secrets",
 ];
 
 function riskRank(r) {
@@ -325,6 +346,11 @@ function riskRank(r) {
 export function nextFixes(risks) {
   // risks are already in final priority order; mirror them exactly.
   return risks.map((r) => r.fix);
+}
+
+// "Ready" = nothing high-severity stands between the app and its target scale.
+export function isReady(risks) {
+  return !risks.some((r) => r.sev === "high");
 }
 
 /* ── Roadmap ────────────────────────────────────────────── */
