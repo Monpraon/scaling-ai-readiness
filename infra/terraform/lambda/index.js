@@ -248,7 +248,7 @@ const SRE = {
   fileWrite: /fs\.(promises\.)?writeFile|fs\.createWriteStream|multer|formidable|busboy/i,
   uploadUI: /<input[^>]*type=["']file["']|multipart\/form-data|new FormData\(/i,
   logging: /winston|pino|bunyan|morgan|@sentry\/|cloudwatch|createLogger|loguru|structlog/i,
-  auth: /cognito|next-auth|passport|firebaseui|firebase[^\n]{0,40}auth|@clerk|auth0|jsonwebtoken|\bjwt\b|express-session|oauth|@supabase[^\n]{0,20}auth|lucia-auth|@auth\//i,
+  auth: /cognito|next-auth|@auth\/|@clerk|\bclerk\b|auth0|firebase[^\n]{0,40}\.auth|express-session|lucia-auth|@?supabase[^\n]{0,20}auth|jsonwebtoken|jwt\.(sign|verify)|passport\.(authenticate|use)|["'`]passport["'`]|oauth2/i,
 };
 
 // Mirrors web/src/scan.js: detected ⇒ true; not seen ⇒ null (unknown) for
