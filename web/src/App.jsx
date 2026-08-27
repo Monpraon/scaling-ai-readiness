@@ -4,6 +4,8 @@ import {
   SCALES,
   SCALE_LABEL,
   SVC,
+  CLOUDS,
+  svcName,
   visibleQuestions,
   assessRisks,
   nextFixes,
@@ -71,6 +73,8 @@ const UI = {
   breakFirst: { en: "What will break first", th: "อะไรจะพังก่อน" },
   fixNext: { en: "What to fix next", th: "ต้องแก้อะไรต่อ" },
   archScale: { en: "Architecture at your scale", th: "สถาปัตยกรรมตามสเกลของคุณ" },
+  cloudLabel: { en: "Cloud provider", th: "ผู้ให้บริการคลาวด์" },
+  cloudNote: { en: "AWS is the reference; equivalents shown for other clouds.", th: "ใช้ AWS เป็นหลัก และแสดงบริการเทียบเท่าของคลาวด์อื่น" },
   roadmap: { en: "Scaling roadmap", th: "แผนการสเกล" },
   crosscut: { en: "Cross-cutting at this scale", th: "องค์ประกอบร่วมที่สเกลนี้" },
   sliderNote: {
@@ -173,7 +177,7 @@ function BiBtn({ label, ...rest }) {
 
 /* ── architecture diagram ───────────────────────────────── */
 
-function Node({ svcKey, dim }) {
+function Node({ svcKey, dim, cloud }) {
   const s = SVC[svcKey];
   return (
     <div
@@ -188,19 +192,19 @@ function Node({ svcKey, dim }) {
     >
       <div style={{ fontWeight: 800, fontSize: 12.5, color: C.text }}>{s.en}</div>
       <div style={{ fontSize: 10, color: C.faint }}>{s.th}</div>
-      <div style={{ fontSize: 10.5, color: C.mut, marginTop: 3, lineHeight: 1.3 }}>{s.aws}</div>
+      <div style={{ fontSize: 10.5, color: C.mut, marginTop: 3, lineHeight: 1.3 }}>{svcName(svcKey, cloud)}</div>
     </div>
   );
 }
 
-function Architecture({ scale, answers }) {
+function Architecture({ scale, answers, cloud }) {
   const { pipeline, governance } = useMemo(() => architectureForScale(scale, answers), [scale, answers]);
   return (
     <div>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
         {pipeline.map((k, i) => (
           <div key={k} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Node svcKey={k} />
+            <Node svcKey={k} cloud={cloud} />
             {i < pipeline.length - 1 && <span style={{ color: C.accent, fontWeight: 800 }}>→</span>}
           </div>
         ))}
@@ -212,7 +216,7 @@ function Architecture({ scale, answers }) {
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {governance.map((k) => (
-              <Node key={k} svcKey={k} dim />
+              <Node key={k} svcKey={k} dim cloud={cloud} />
             ))}
           </div>
         </div>
@@ -513,6 +517,7 @@ function Assess({ answers, setAnswers, onDone, onBack }) {
 
 function Report({ path, meta, answers, target, onAgain }) {
   const [scale, setScale] = useState(target);
+  const [cloud, setCloud] = useState("aws");
   const risks = useMemo(() => assessRisks(answers, target), [answers, target]);
   const fixes = useMemo(() => nextFixes(risks), [risks]);
   const roadmapIdx = roadmapIndexForScale(scale);
@@ -529,6 +534,7 @@ function Report({ path, meta, answers, target, onAgain }) {
         description: meta.description,
         target_users: target,
         findings,
+        cloud,
       });
       setAiText(explanation);
       setAiState("done");
@@ -599,6 +605,34 @@ function Report({ path, meta, answers, target, onAgain }) {
       {/* C — architecture at your scale */}
       <Eyebrow en={UI.archScale.en} th={UI.archScale.th} />
       <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "16px", marginBottom: 26 }}>
+        {/* cloud provider selector — AWS default, others show equivalents */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ color: C.mut, fontSize: 11.5, fontWeight: 700, marginBottom: 6 }}>
+            {UI.cloudLabel.en} · {UI.cloudLabel.th}
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+            {CLOUDS.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setCloud(c.id)}
+                style={{
+                  background: cloud === c.id ? "rgba(124,92,255,0.16)" : C.cardUp,
+                  border: `1px solid ${cloud === c.id ? C.accent : C.line}`,
+                  color: cloud === c.id ? C.text : C.mut,
+                  borderRadius: 20,
+                  padding: "5px 12px",
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                {c.label}
+                {c.note && <span style={{ color: C.accent, fontSize: 10, marginLeft: 5 }}>{c.note.en}</span>}
+              </button>
+            ))}
+          </div>
+          <div style={{ color: C.faint, fontSize: 11, marginTop: 6 }}>{UI.cloudNote.en} · {UI.cloudNote.th}</div>
+        </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
           <span style={{ fontSize: 26, fontWeight: 900, color: C.accent }}>{scale.toLocaleString()}</span>
           <span style={{ fontSize: 12, color: C.mut, textAlign: "right" }}>
@@ -623,7 +657,7 @@ function Report({ path, meta, answers, target, onAgain }) {
             </span>
           ))}
         </div>
-        <Architecture scale={scale} answers={answers} />
+        <Architecture scale={scale} answers={answers} cloud={cloud} />
         <p style={{ color: C.mut, fontSize: 12, marginTop: 14, marginBottom: 0 }}>{UI.sliderNote.en}</p>
         <p style={{ color: C.faint, fontSize: 11.5, margin: "2px 0 0" }}>{UI.sliderNote.th}</p>
       </div>
@@ -707,6 +741,7 @@ function Report({ path, meta, answers, target, onAgain }) {
                 scale,
                 risks,
                 fixes,
+                cloud,
               })
             )
           }

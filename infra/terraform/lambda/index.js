@@ -62,10 +62,13 @@ async function bumpBudget() {
   return out.Attributes ? out.Attributes.n : 0;
 }
 
-function buildPrompt({ app_type, description, target_users, findings }) {
+const CLOUD_NAME = { aws: "AWS", gcp: "Google Cloud", azure: "Microsoft Azure", huawei: "Huawei Cloud" };
+
+function buildPrompt({ app_type, description, target_users, findings, cloud }) {
   const list = (findings || []).slice(0, 12).map((f) => `- ${String(f).slice(0, 160)}`).join("\n") || "- (no blocking risks detected)";
   const desc = String(description || "").slice(0, MAX_INPUT_CHARS);
-  return `You are a friendly cloud architect helping a non-expert scale an AI prototype on AWS.
+  const cloudName = CLOUD_NAME[cloud] || "AWS";
+  return `You are a friendly cloud architect helping a non-expert scale an AI prototype on ${cloudName}.
 
 A deterministic rule engine has already assessed their app. Do NOT invent new problems or change its conclusions — only explain them in warm, plain language a teacher or hobbyist would understand. No jargon dumps.
 

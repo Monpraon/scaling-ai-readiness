@@ -19,25 +19,42 @@ export const SCALE_LABEL = {
   10000: { en: "Organisation · 1,000–10,000+", th: "ระดับองค์กร · 1,000–10,000+" },
 };
 
-// AWS service metadata. Product names stay in English; the role label
-// is translated.
+// Cloud providers. AWS is the default / recommended; the others let the
+// architecture map to an equivalent stack so the tool doesn't look rigid.
+export const CLOUDS = [
+  { id: "aws", label: "AWS", note: { en: "recommended", th: "แนะนำ" } },
+  { id: "gcp", label: "Google Cloud" },
+  { id: "azure", label: "Azure" },
+  { id: "huawei", label: "Huawei Cloud" },
+];
+
+// Service metadata. Role label (en/th) is cloud-agnostic; `svc` maps the
+// role to each provider's closest product. Cross-cloud equivalents are
+// approximate by nature.
 export const SVC = {
-  frontend: { en: "Frontend", th: "หน้าเว็บ", aws: "S3 + CloudFront / Amplify" },
-  auth: { en: "Auth", th: "ระบบล็อกอิน", aws: "Amazon Cognito" },
-  api: { en: "API", th: "API", aws: "API Gateway + Lambda" },
-  ai: { en: "AI", th: "AI", aws: "Amazon Bedrock" },
-  aiWorker: { en: "AI Worker", th: "ตัวประมวลผล AI", aws: "Lambda + Bedrock" },
-  queue: { en: "Queue", th: "คิวงาน", aws: "Amazon SQS" },
-  workflow: { en: "Workflow", th: "เวิร์กโฟลว์", aws: "Step Functions" },
-  db: { en: "Database", th: "ฐานข้อมูล", aws: "Amazon DynamoDB" },
-  storage: { en: "File Storage", th: "ที่เก็บไฟล์", aws: "Amazon S3" },
-  secrets: { en: "Secrets", th: "การเก็บความลับ", aws: "Secrets Manager" },
-  monitoring: { en: "Monitoring", th: "การเฝ้าระวัง", aws: "Amazon CloudWatch" },
-  audit: { en: "Audit", th: "บันทึกตรวจสอบ", aws: "AWS CloudTrail" },
-  cost: { en: "Cost Control", th: "ควบคุมค่าใช้จ่าย", aws: "AWS Budgets" },
-  review: { en: "Human Review", th: "การตรวจโดยมนุษย์", aws: "Step Functions approval" },
-  waf: { en: "Protection", th: "การป้องกัน", aws: "AWS WAF" },
+  frontend: { en: "Frontend", th: "หน้าเว็บ", svc: { aws: "S3 + CloudFront / Amplify", gcp: "Cloud Storage + Cloud CDN", azure: "Static Web Apps + CDN", huawei: "OBS + CDN" } },
+  auth: { en: "Auth", th: "ระบบล็อกอิน", svc: { aws: "Amazon Cognito", gcp: "Identity Platform", azure: "Entra ID (AD B2C)", huawei: "IAM / AppAuth" } },
+  api: { en: "API", th: "API", svc: { aws: "API Gateway + Lambda", gcp: "API Gateway + Cloud Run", azure: "API Management + Functions", huawei: "API Gateway + FunctionGraph" } },
+  ai: { en: "AI", th: "AI", svc: { aws: "Amazon Bedrock", gcp: "Vertex AI", azure: "Azure OpenAI", huawei: "ModelArts (Pangu)" } },
+  aiWorker: { en: "AI Worker", th: "ตัวประมวลผล AI", svc: { aws: "Lambda + Bedrock", gcp: "Cloud Run + Vertex AI", azure: "Functions + Azure OpenAI", huawei: "FunctionGraph + ModelArts" } },
+  queue: { en: "Queue", th: "คิวงาน", svc: { aws: "Amazon SQS", gcp: "Pub/Sub", azure: "Service Bus", huawei: "DMS (Kafka)" } },
+  workflow: { en: "Workflow", th: "เวิร์กโฟลว์", svc: { aws: "Step Functions", gcp: "Workflows", azure: "Logic Apps", huawei: "FunctionGraph Flows" } },
+  db: { en: "Database", th: "ฐานข้อมูล", svc: { aws: "Amazon DynamoDB", gcp: "Firestore", azure: "Cosmos DB", huawei: "GaussDB NoSQL" } },
+  storage: { en: "File Storage", th: "ที่เก็บไฟล์", svc: { aws: "Amazon S3", gcp: "Cloud Storage", azure: "Blob Storage", huawei: "OBS" } },
+  secrets: { en: "Secrets", th: "การเก็บความลับ", svc: { aws: "Secrets Manager", gcp: "Secret Manager", azure: "Key Vault", huawei: "CSMS" } },
+  monitoring: { en: "Monitoring", th: "การเฝ้าระวัง", svc: { aws: "Amazon CloudWatch", gcp: "Cloud Monitoring", azure: "Azure Monitor", huawei: "Cloud Eye" } },
+  audit: { en: "Audit", th: "บันทึกตรวจสอบ", svc: { aws: "AWS CloudTrail", gcp: "Cloud Audit Logs", azure: "Monitor Activity Log", huawei: "Cloud Trace (CTS)" } },
+  cost: { en: "Cost Control", th: "ควบคุมค่าใช้จ่าย", svc: { aws: "AWS Budgets", gcp: "Billing Budgets", azure: "Cost Management", huawei: "Cost Center" } },
+  review: { en: "Human Review", th: "การตรวจโดยมนุษย์", svc: { aws: "Step Functions approval", gcp: "Workflows approval", azure: "Logic Apps approval", huawei: "FunctionGraph approval" } },
+  waf: { en: "Protection", th: "การป้องกัน", svc: { aws: "AWS WAF", gcp: "Cloud Armor", azure: "Azure WAF", huawei: "WAF" } },
 };
+
+// Resolve a service's product name for the chosen cloud (falls back to AWS).
+export function svcName(key, cloud) {
+  const s = SVC[key];
+  if (!s) return "";
+  return (s.svc && (s.svc[cloud] || s.svc.aws)) || "";
+}
 
 /* ── Assessment questions ───────────────────────────────── */
 
@@ -356,7 +373,8 @@ export function architectureForScale(scale, a = {}) {
 
 /* ── Report → Markdown (bilingual) ──────────────────────── */
 
-export function reportToMarkdown({ appType, description, target, scale, risks, fixes }) {
+export function reportToMarkdown({ appType, description, target, scale, risks, fixes, cloud = "aws" }) {
+  const cloudLabel = (CLOUDS.find((c) => c.id === cloud) || CLOUDS[0]).label;
   const L = [];
   L.push(`# Scale My AI — Scaling Assessment / ผลประเมินการสเกล`);
   L.push("");
@@ -387,13 +405,14 @@ export function reportToMarkdown({ appType, description, target, scale, risks, f
 
   const { pipeline, governance } = architectureForScale(scale, {});
   L.push(`## Architecture at ${scale.toLocaleString()} users / สถาปัตยกรรมที่ ${scale.toLocaleString()} ผู้ใช้`);
+  L.push(`**Cloud / คลาวด์:** ${cloudLabel}`);
   L.push(`**Flow / ลำดับ:** ${pipeline.map((k) => SVC[k].en).join(" → ")}`);
   L.push("");
-  for (const k of pipeline) L.push(`- **${SVC[k].en} / ${SVC[k].th}** — ${SVC[k].aws}`);
+  for (const k of pipeline) L.push(`- **${SVC[k].en} / ${SVC[k].th}** — ${svcName(k, cloud)}`);
   if (governance.length) {
     L.push("");
     L.push(`**Cross-cutting / องค์ประกอบร่วม:**`);
-    for (const k of governance) L.push(`- **${SVC[k].en} / ${SVC[k].th}** — ${SVC[k].aws}`);
+    for (const k of governance) L.push(`- **${SVC[k].en} / ${SVC[k].th}** — ${svcName(k, cloud)}`);
   }
   L.push("");
 

@@ -16,12 +16,12 @@ const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/+$/, "");
 
 export const hasBackend = Boolean(API_BASE);
 
-export async function explainFindings({ app_type, description, target_users, findings }) {
+export async function explainFindings({ app_type, description, target_users, findings, cloud }) {
   if (!hasBackend) throw new Error("no-backend");
   const res = await fetch(`${API_BASE}/analyze`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ app_type, description, target_users, findings }),
+    body: JSON.stringify({ app_type, description, target_users, findings, cloud }),
   });
   if (!res.ok) throw new Error(`analyze ${res.status}`);
   return res.json();
