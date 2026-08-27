@@ -48,7 +48,26 @@ const MAX_FILES = 40;
 const MAX_BYTES = 200 * 1024;
 
 async function getTree(owner, repo) {
-  for (const branch of ["main", "master"]) {
+  // Resolve the real default branch first (handles repos not on main/master).
+  let defaultBranch = null;
+  try {
+    const meta = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+      headers: { Accept: "application/vnd.github+json" },
+    });
+    if (meta.status === 200) {
+      defaultBranch = (await meta.json()).default_branch || null;
+    } else if (meta.status === 404) {
+      throw new RepoAccessError("private_or_missing");
+    } else if (meta.status === 403) {
+      throw new RepoAccessError("ratelimited");
+    }
+  } catch (e) {
+    if (e instanceof RepoAccessError) throw e;
+    // network error resolving meta — fall through to branch guesses
+  }
+
+  const branches = [defaultBranch, "main", "master"].filter(Boolean);
+  for (const branch of [...new Set(branches)]) {
     let res;
     try {
       res = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`, {
@@ -62,7 +81,7 @@ async function getTree(owner, repo) {
       return { branch, tree: Array.isArray(j.tree) ? j.tree : [] };
     }
     if (res.status === 403) throw new RepoAccessError("ratelimited");
-    // 404 → try the next branch name
+    // 404 → try the next branch
   }
   throw new RepoAccessError("private_or_missing");
 }

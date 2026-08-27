@@ -625,7 +625,7 @@ function InputScreen({ path, meta, setMeta, target, setTarget, onNext, onScanned
       "too-big": UI.errTooBig,
     }[code] || UI.errScan);
 
-  const isGithub = (u) => /(^|\.)github\.com\//i.test(u) || /^[\w.-]+\/[\w.-]+$/.test(u.trim());
+  const isGithub = (u) => /github\.com\//i.test(u) || /^[\w.-]+\/[\w.-]+$/.test(u.trim());
   const isDrive = (u) => /(drive|docs)\.google\.com/i.test(u);
 
   const runScan = async () => {
