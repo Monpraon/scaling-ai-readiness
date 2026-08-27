@@ -75,7 +75,12 @@ Their description: ${desc || "(none provided)"}
 Findings from the rule engine (these are the facts):
 ${list}
 
-Write a short, encouraging explanation (about 90-140 words, 2 short paragraphs). First: what will break first and why it matters at their scale, in everyday terms. Second: the single most important next step. End on an encouraging note. Never reveal or repeat any secret/API key value. Respond with plain text only — no markdown headings, no bullet lists.`;
+Write a short, encouraging explanation covering (a) what will break first and why it matters at their scale, in everyday terms, and (b) the single most important next step. End on an encouraging note. Never reveal or repeat any secret/API key value.
+
+Respond in BOTH English and Thai, in this exact layout (plain text only, no markdown, no bullet lists):
+EN: <2-3 sentences in English>
+
+TH: <the same, in natural Thai>`;
 }
 
 async function converse(modelId, prompt) {

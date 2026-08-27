@@ -1,41 +1,42 @@
 /* ─────────────────────────────────────────────────────────
-   Scale My AI — deterministic assessment engine
+   Scale My AI — deterministic assessment engine (bilingual TH/EN)
 
    Rules first. This module decides everything the report shows:
    what breaks first, what to fix next, the roadmap stage, and the
    AWS architecture at any given scale. No network, no model — so the
    demo always works, exactly as the spec requires.
 
-   The optional LLM layer only rephrases these findings; it never
-   changes them.
+   Every human-facing string carries both English (en) and Thai (th).
+   The UI shows both at once.
    ───────────────────────────────────────────────────────── */
 
 export const SCALES = [10, 100, 1000, 10000];
 
 export const SCALE_LABEL = {
-  10: "Personal · 1–10",
-  100: "Small team · 10–100",
-  1000: "Department · 100–1,000",
-  10000: "Organisation · 1,000–10,000+",
+  10: { en: "Personal · 1–10", th: "ส่วนตัว · 1–10" },
+  100: { en: "Small team · 10–100", th: "ทีมเล็ก · 10–100" },
+  1000: { en: "Department · 100–1,000", th: "ระดับหน่วยงาน · 100–1,000" },
+  10000: { en: "Organisation · 1,000–10,000+", th: "ระดับองค์กร · 1,000–10,000+" },
 };
 
-// AWS service metadata for architecture nodes.
+// AWS service metadata. Product names stay in English; the role label
+// is translated.
 export const SVC = {
-  frontend: { label: "Frontend", aws: "S3 + CloudFront / Amplify" },
-  auth: { label: "Auth", aws: "Amazon Cognito" },
-  api: { label: "API", aws: "API Gateway + Lambda" },
-  ai: { label: "AI", aws: "Amazon Bedrock" },
-  aiWorker: { label: "AI Worker", aws: "Lambda + Bedrock" },
-  queue: { label: "Queue", aws: "Amazon SQS" },
-  workflow: { label: "Workflow", aws: "Step Functions" },
-  db: { label: "Database", aws: "Amazon DynamoDB" },
-  storage: { label: "File Storage", aws: "Amazon S3" },
-  secrets: { label: "Secrets", aws: "Secrets Manager" },
-  monitoring: { label: "Monitoring", aws: "Amazon CloudWatch" },
-  audit: { label: "Audit", aws: "AWS CloudTrail" },
-  cost: { label: "Cost Control", aws: "AWS Budgets" },
-  review: { label: "Human Review", aws: "Step Functions approval" },
-  waf: { label: "Protection", aws: "AWS WAF" },
+  frontend: { en: "Frontend", th: "หน้าเว็บ", aws: "S3 + CloudFront / Amplify" },
+  auth: { en: "Auth", th: "ระบบล็อกอิน", aws: "Amazon Cognito" },
+  api: { en: "API", th: "API", aws: "API Gateway + Lambda" },
+  ai: { en: "AI", th: "AI", aws: "Amazon Bedrock" },
+  aiWorker: { en: "AI Worker", th: "ตัวประมวลผล AI", aws: "Lambda + Bedrock" },
+  queue: { en: "Queue", th: "คิวงาน", aws: "Amazon SQS" },
+  workflow: { en: "Workflow", th: "เวิร์กโฟลว์", aws: "Step Functions" },
+  db: { en: "Database", th: "ฐานข้อมูล", aws: "Amazon DynamoDB" },
+  storage: { en: "File Storage", th: "ที่เก็บไฟล์", aws: "Amazon S3" },
+  secrets: { en: "Secrets", th: "การเก็บความลับ", aws: "Secrets Manager" },
+  monitoring: { en: "Monitoring", th: "การเฝ้าระวัง", aws: "Amazon CloudWatch" },
+  audit: { en: "Audit", th: "บันทึกตรวจสอบ", aws: "AWS CloudTrail" },
+  cost: { en: "Cost Control", th: "ควบคุมค่าใช้จ่าย", aws: "AWS Budgets" },
+  review: { en: "Human Review", th: "การตรวจโดยมนุษย์", aws: "Step Functions approval" },
+  waf: { en: "Protection", th: "การป้องกัน", aws: "AWS WAF" },
 };
 
 /* ── Assessment questions ───────────────────────────────── */
@@ -43,88 +44,98 @@ export const SVC = {
 export const QUESTIONS = [
   {
     id: "aiCalls",
-    q: "Does the app call an AI model?",
+    en: "Does the app call an AI model?",
+    th: "แอปของคุณเรียกใช้โมเดล AI หรือไม่",
     opts: [
-      { label: "Yes", value: true },
-      { label: "No", value: false },
+      { en: "Yes", th: "ใช่", value: true },
+      { en: "No", th: "ไม่", value: false },
     ],
   },
   {
     id: "secretsInClient",
-    q: "Is an API key or secret stored in the browser / client code?",
+    en: "Is an API key or secret stored in the browser / client code?",
+    th: "มี API key หรือความลับเก็บอยู่ในเบราว์เซอร์ / โค้ดฝั่งผู้ใช้หรือไม่",
     opts: [
-      { label: "Yes", value: true },
-      { label: "Not sure", value: true },
-      { label: "No", value: false },
+      { en: "Yes", th: "ใช่", value: true },
+      { en: "Not sure", th: "ไม่แน่ใจ", value: true },
+      { en: "No", th: "ไม่มี", value: false },
     ],
   },
   {
     id: "aiSync",
-    q: "Are AI requests handled synchronously (the user waits for the response)?",
+    en: "Are AI requests handled synchronously (the user waits for the response)?",
+    th: "คำขอ AI ทำงานแบบซิงโครนัส (ผู้ใช้ต้องรอผล) หรือไม่",
     opts: [
-      { label: "Yes, the user waits", value: true },
-      { label: "No, it's queued / async", value: false },
+      { en: "Yes, the user waits", th: "ใช่ ผู้ใช้ต้องรอ", value: true },
+      { en: "No, it's queued / async", th: "ไม่ ใช้คิว / async", value: false },
     ],
     dependsOn: (a) => a.aiCalls === true,
   },
   {
     id: "hasAuth",
-    q: "Is there user login / authentication?",
+    en: "Is there user login / authentication?",
+    th: "มีระบบล็อกอิน / ยืนยันตัวตนผู้ใช้หรือไม่",
     opts: [
-      { label: "Yes", value: true },
-      { label: "No", value: false },
+      { en: "Yes", th: "มี", value: true },
+      { en: "No", th: "ไม่มี", value: false },
     ],
   },
   {
     id: "dataStore",
-    q: "Where is data stored today?",
+    en: "Where is data stored today?",
+    th: "ตอนนี้เก็บข้อมูลไว้ที่ไหน",
     opts: [
-      { label: "Only in the browser (localStorage)", value: "browser" },
-      { label: "A server database", value: "db" },
-      { label: "Files on a server", value: "files" },
-      { label: "Nowhere / not sure", value: "none" },
+      { en: "Only in the browser (localStorage)", th: "ในเบราว์เซอร์เท่านั้น (localStorage)", value: "browser" },
+      { en: "A server database", th: "ฐานข้อมูลบนเซิร์ฟเวอร์", value: "db" },
+      { en: "Files on a server", th: "ไฟล์บนเซิร์ฟเวอร์", value: "files" },
+      { en: "Nowhere / not sure", th: "ไม่ได้เก็บ / ไม่แน่ใจ", value: "none" },
     ],
   },
   {
     id: "hasBackend",
-    q: "Is there a backend server (something beyond the static page)?",
+    en: "Is there a backend server (something beyond the static page)?",
+    th: "มีเซิร์ฟเวอร์ฝั่งหลังบ้าน (นอกเหนือจากหน้าเว็บสแตติก) หรือไม่",
     opts: [
-      { label: "Yes", value: true },
-      { label: "No", value: false },
+      { en: "Yes", th: "มี", value: true },
+      { en: "No", th: "ไม่มี", value: false },
     ],
   },
   {
     id: "fileUploads",
-    q: "Do users upload files?",
+    en: "Do users upload files?",
+    th: "ผู้ใช้อัปโหลดไฟล์หรือไม่",
     opts: [
-      { label: "Yes", value: true },
-      { label: "No", value: false },
+      { en: "Yes", th: "ใช่", value: true },
+      { en: "No", th: "ไม่", value: false },
     ],
   },
   {
     id: "hasLogging",
-    q: "Is there any logging or monitoring?",
+    en: "Is there any logging or monitoring?",
+    th: "มีการเก็บ log หรือเฝ้าระวังระบบหรือไม่",
     opts: [
-      { label: "Yes", value: true },
-      { label: "No", value: false },
+      { en: "Yes", th: "มี", value: true },
+      { en: "No", th: "ไม่มี", value: false },
     ],
   },
   {
     id: "humanReview",
-    q: "Is there a human approval step for AI output?",
+    en: "Is there a human approval step for AI output?",
+    th: "มีขั้นตอนให้คนตรวจอนุมัติผลลัพธ์ของ AI หรือไม่",
     opts: [
-      { label: "Yes", value: true },
-      { label: "No", value: false },
+      { en: "Yes", th: "มี", value: true },
+      { en: "No", th: "ไม่มี", value: false },
     ],
   },
   {
     id: "workload",
-    q: "What does usage look like?",
+    en: "What does usage look like?",
+    th: "ลักษณะการใช้งานเป็นอย่างไร",
     opts: [
-      { label: "Occasional", value: "occasional" },
-      { label: "Daily", value: "daily" },
-      { label: "Bursty / spikes", value: "bursty" },
-      { label: "Many at once", value: "concurrent" },
+      { en: "Occasional", th: "นาน ๆ ครั้ง", value: "occasional" },
+      { en: "Daily", th: "ทุกวัน", value: "daily" },
+      { en: "Bursty / spikes", th: "เป็นช่วงพุ่งสูง", value: "bursty" },
+      { en: "Many at once", th: "จำนวนมากพร้อมกัน", value: "concurrent" },
     ],
   },
 ];
@@ -135,7 +146,6 @@ export function visibleQuestions(answers) {
 
 /* ── Risk rules: "what breaks first" ────────────────────── */
 
-// Each rule returns a risk when its condition holds. Ordered by severity.
 export function assessRisks(a, target) {
   const risks = [];
   const big = target >= 100;
@@ -147,9 +157,15 @@ export function assessRisks(a, target) {
     risks.push({
       id: "secrets",
       sev: "high",
-      title: "API key exposed in the frontend",
-      why: "Anyone can open dev tools, read the key, and run up your bill or abuse the model.",
-      fix: "Move the key to a backend and store it in Secrets Manager. The browser should never see it.",
+      title: { en: "API key exposed in the frontend", th: "API key ถูกเปิดเผยในฝั่งหน้าเว็บ" },
+      why: {
+        en: "Anyone can open dev tools, read the key, and run up your bill or abuse the model.",
+        th: "ใครก็เปิด dev tools อ่านคีย์ได้ แล้วนำไปใช้จนค่าใช้จ่ายบานปลายหรือใช้โมเดลในทางที่ผิด",
+      },
+      fix: {
+        en: "Move the key to a backend and store it in Secrets Manager. The browser should never see it.",
+        th: "ย้ายคีย์ไปฝั่งหลังบ้านและเก็บใน Secrets Manager เบราว์เซอร์ไม่ควรเห็นคีย์เลย",
+      },
     });
   }
 
@@ -157,9 +173,15 @@ export function assessRisks(a, target) {
     risks.push({
       id: "sync-ai",
       sev: "high",
-      title: "AI requests processed synchronously",
-      why: "At this scale, users waiting on live model calls means timeouts, retries, and runaway cost during spikes.",
-      fix: "Introduce an async queue (SQS) with workers, plus retries and rate limiting.",
+      title: { en: "AI requests processed synchronously", th: "คำขอ AI ถูกประมวลผลแบบซิงโครนัส" },
+      why: {
+        en: "At this scale, users waiting on live model calls means timeouts, retries, and runaway cost during spikes.",
+        th: "ที่สเกลนี้ การให้ผู้ใช้รอผลโมเดลแบบสด ทำให้เกิด timeout การ retry และค่าใช้จ่ายพุ่งช่วงคนใช้เยอะ",
+      },
+      fix: {
+        en: "Introduce an async queue (SQS) with workers, plus retries and rate limiting.",
+        th: "เพิ่มคิวแบบ async (SQS) พร้อมตัวประมวลผล มีการ retry และจำกัดอัตราการเรียก",
+      },
     });
   }
 
@@ -167,9 +189,15 @@ export function assessRisks(a, target) {
     risks.push({
       id: "no-auth",
       sev: "high",
-      title: "No user authentication",
-      why: "With 100+ users you can't tell people apart, protect data, or stop abuse.",
-      fix: "Add authentication (Cognito) before opening it up.",
+      title: { en: "No user authentication", th: "ยังไม่มีระบบยืนยันตัวตนผู้ใช้" },
+      why: {
+        en: "With 100+ users you can't tell people apart, protect data, or stop abuse.",
+        th: "เมื่อมีผู้ใช้ 100+ คน คุณจะแยกผู้ใช้ไม่ออก ปกป้องข้อมูลไม่ได้ และกันการใช้ผิดไม่ได้",
+      },
+      fix: {
+        en: "Add authentication (Cognito) before opening it up.",
+        th: "เพิ่มระบบล็อกอิน (Cognito) ก่อนเปิดให้คนใช้ทั่วไป",
+      },
     });
   }
 
@@ -177,9 +205,15 @@ export function assessRisks(a, target) {
     risks.push({
       id: "browser-data",
       sev: "high",
-      title: "Data stored only in the browser",
-      why: "localStorage is per-device and easily lost. It can't back a multi-user app.",
-      fix: "Add a persistent database (DynamoDB) behind your API.",
+      title: { en: "Data stored only in the browser", th: "เก็บข้อมูลไว้ในเบราว์เซอร์เท่านั้น" },
+      why: {
+        en: "localStorage is per-device and easily lost. It can't back a multi-user app.",
+        th: "localStorage ผูกกับเครื่องแต่ละเครื่องและหายง่าย ใช้รองรับแอปหลายผู้ใช้ไม่ได้",
+      },
+      fix: {
+        en: "Add a persistent database (DynamoDB) behind your API.",
+        th: "เพิ่มฐานข้อมูลถาวร (DynamoDB) ไว้หลัง API",
+      },
     });
   }
 
@@ -187,9 +221,15 @@ export function assessRisks(a, target) {
     risks.push({
       id: "no-backend",
       sev: "high",
-      title: "No backend to enforce anything",
-      why: "Without a server you can't hold secrets, authenticate, validate input, or control cost.",
-      fix: "Stand up API Gateway + Lambda as the trusted layer between the browser and your data/model.",
+      title: { en: "No backend to enforce anything", th: "ไม่มีหลังบ้านไว้บังคับใช้กฎ" },
+      why: {
+        en: "Without a server you can't hold secrets, authenticate, validate input, or control cost.",
+        th: "ถ้าไม่มีเซิร์ฟเวอร์ คุณจะเก็บความลับ ยืนยันตัวตน ตรวจสอบข้อมูล หรือคุมค่าใช้จ่ายไม่ได้",
+      },
+      fix: {
+        en: "Stand up API Gateway + Lambda as the trusted layer between the browser and your data/model.",
+        th: "ตั้ง API Gateway + Lambda เป็นชั้นที่เชื่อถือได้ระหว่างเบราว์เซอร์กับข้อมูล/โมเดล",
+      },
     });
   }
 
@@ -197,9 +237,15 @@ export function assessRisks(a, target) {
     risks.push({
       id: "uploads",
       sev: "medium",
-      title: "File uploads with no object storage",
-      why: "Uploads need durable, scalable storage with lifecycle and access controls.",
-      fix: "Store uploads in S3 with size limits and automatic expiry.",
+      title: { en: "File uploads with no object storage", th: "มีการอัปโหลดไฟล์แต่ไม่มีที่เก็บอ็อบเจกต์" },
+      why: {
+        en: "Uploads need durable, scalable storage with lifecycle and access controls.",
+        th: "ไฟล์อัปโหลดต้องการที่เก็บที่ทนทาน ขยายได้ และควบคุมสิทธิ์เข้าถึง",
+      },
+      fix: {
+        en: "Store uploads in S3 with size limits and automatic expiry.",
+        th: "เก็บไฟล์ใน S3 พร้อมจำกัดขนาดและตั้งเวลาให้หมดอายุอัตโนมัติ",
+      },
     });
   }
 
@@ -207,9 +253,15 @@ export function assessRisks(a, target) {
     risks.push({
       id: "no-logs",
       sev: "medium",
-      title: "No logging or monitoring",
-      why: "At scale you can't debug failures or spot abuse you can't see.",
-      fix: "Add CloudWatch logs, metrics, and alarms.",
+      title: { en: "No logging or monitoring", th: "ไม่มีการเก็บ log หรือเฝ้าระวัง" },
+      why: {
+        en: "At scale you can't debug failures or spot abuse you can't see.",
+        th: "เมื่อสเกลใหญ่ขึ้น คุณจะดีบักปัญหาไม่ได้ และมองไม่เห็นการใช้ผิด",
+      },
+      fix: {
+        en: "Add CloudWatch logs, metrics, and alarms.",
+        th: "เพิ่ม CloudWatch สำหรับ log เมตริก และการแจ้งเตือน",
+      },
     });
   }
 
@@ -217,9 +269,15 @@ export function assessRisks(a, target) {
     risks.push({
       id: "no-governance",
       sev: "medium",
-      title: "No human review or governance on AI output",
-      why: "At organisation scale, unreviewed AI decisions become a compliance and trust risk.",
-      fix: "Add an approval step, audit trail, and cost controls.",
+      title: { en: "No human review or governance on AI output", th: "ไม่มีการตรวจโดยมนุษย์หรือการกำกับผลลัพธ์ AI" },
+      why: {
+        en: "At organisation scale, unreviewed AI decisions become a compliance and trust risk.",
+        th: "ที่ระดับองค์กร การตัดสินของ AI ที่ไม่มีคนตรวจกลายเป็นความเสี่ยงด้านการปฏิบัติตามกฎและความน่าเชื่อถือ",
+      },
+      fix: {
+        en: "Add an approval step, audit trail, and cost controls.",
+        th: "เพิ่มขั้นตอนอนุมัติ บันทึกตรวจสอบ (audit trail) และการควบคุมค่าใช้จ่าย",
+      },
     });
   }
 
@@ -255,23 +313,22 @@ export function nextFixes(risks) {
 /* ── Roadmap ────────────────────────────────────────────── */
 
 export const ROADMAP = [
-  { stage: "Prototype", detail: "Frontend + direct AI call" },
-  { stage: "Shared App", detail: "Frontend + Backend + Secrets Management" },
-  { stage: "Multi-user", detail: "Authentication + Database + Storage" },
-  { stage: "Scalable AI", detail: "Queue + Worker + Retry + Rate Limit" },
-  { stage: "Governed AI", detail: "Audit + Monitoring + Human Review + Cost Control" },
+  { stage: { en: "Prototype", th: "ต้นแบบ" }, detail: { en: "Frontend + direct AI call", th: "หน้าเว็บ + เรียก AI ตรง" } },
+  { stage: { en: "Shared App", th: "แอปที่แชร์ได้" }, detail: { en: "Frontend + Backend + Secrets Management", th: "หน้าเว็บ + หลังบ้าน + จัดการความลับ" } },
+  { stage: { en: "Multi-user", th: "หลายผู้ใช้" }, detail: { en: "Authentication + Database + Storage", th: "ล็อกอิน + ฐานข้อมูล + ที่เก็บไฟล์" } },
+  { stage: { en: "Scalable AI", th: "AI ที่ขยายได้" }, detail: { en: "Queue + Worker + Retry + Rate Limit", th: "คิว + ตัวประมวลผล + retry + จำกัดอัตรา" } },
+  { stage: { en: "Governed AI", th: "AI ที่กำกับดูแล" }, detail: { en: "Audit + Monitoring + Human Review + Cost Control", th: "บันทึกตรวจสอบ + เฝ้าระวัง + คนตรวจ + คุมค่าใช้จ่าย" } },
 ];
 
 export function roadmapIndexForScale(scale) {
   if (scale >= 10000) return 4;
   if (scale >= 1000) return 3;
   if (scale >= 100) return 2;
-  return 1; // a shared app is the first real step up from a prototype
+  return 1;
 }
 
 /* ── Architecture at a given scale ──────────────────────── */
 
-// Returns { pipeline: [svcKey...], governance: [svcKey...] }
 export function architectureForScale(scale, a = {}) {
   const pipeline = ["frontend"];
   const governance = [];
@@ -290,78 +347,77 @@ export function architectureForScale(scale, a = {}) {
   if (scale >= 100) pipeline.push("db");
   if (a.fileUploads || scale >= 1000) pipeline.push("storage");
 
-  // Secrets Manager appears as soon as there's a backend holding a key.
   if (a.aiCalls !== false || scale >= 100) governance.push("secrets");
-
   if (scale >= 1000) governance.push("monitoring");
-  if (scale >= 10000) {
-    governance.push("audit", "cost", "review", "waf");
-  }
+  if (scale >= 10000) governance.push("audit", "cost", "review", "waf");
 
   return { pipeline, governance };
 }
 
-/* ── Report → Markdown ──────────────────────────────────── */
+/* ── Report → Markdown (bilingual) ──────────────────────── */
 
 export function reportToMarkdown({ appType, description, target, scale, risks, fixes }) {
   const L = [];
-  L.push(`# Scale My AI — Scaling Assessment`);
+  L.push(`# Scale My AI — Scaling Assessment / ผลประเมินการสเกล`);
   L.push("");
-  L.push(`- **Target scale:** ${target.toLocaleString()} users (${SCALE_LABEL[target]})`);
-  L.push(`- **App type:** ${appType || "prototype"}`);
-  if (description) L.push(`- **Description:** ${description}`);
-  L.push(`- **Generated:** ${new Date().toISOString().slice(0, 10)}`);
+  L.push(`- **Target scale / สเกลเป้าหมาย:** ${target.toLocaleString()} — ${SCALE_LABEL[target].en} · ${SCALE_LABEL[target].th}`);
+  L.push(`- **App type / ประเภทแอป:** ${appType || "prototype"}`);
+  if (description) L.push(`- **Description / คำอธิบาย:** ${description}`);
+  L.push(`- **Generated / สร้างเมื่อ:** ${new Date().toISOString().slice(0, 10)}`);
   L.push("");
 
-  L.push(`## What will break first`);
+  L.push(`## What will break first / อะไรจะพังก่อน`);
   if (!risks.length) {
-    L.push(`No blocking risks detected for this scale.`);
+    L.push(`No blocking risks detected for this scale. / ไม่พบความเสี่ยงที่ปิดกั้นสำหรับสเกลนี้`);
   } else {
     for (const r of risks) {
-      L.push(`### [${r.sev.toUpperCase()}] ${r.title}`);
-      L.push(`- **Why it matters:** ${r.why}`);
-      L.push(`- **Fix:** ${r.fix}`);
+      L.push(`### [${r.sev.toUpperCase()}] ${r.title.en} / ${r.title.th}`);
+      L.push(`- **Why / ทำไม:** ${r.why.en} — ${r.why.th}`);
+      L.push(`- **Fix / วิธีแก้:** ${r.fix.en} — ${r.fix.th}`);
       L.push("");
     }
   }
   L.push("");
 
   if (fixes.length) {
-    L.push(`## What to fix next`);
-    fixes.forEach((f, i) => L.push(`${i + 1}. ${f}`));
+    L.push(`## What to fix next / ต้องแก้อะไรต่อ`);
+    fixes.forEach((f, i) => L.push(`${i + 1}. ${f.en} / ${f.th}`));
     L.push("");
   }
 
   const { pipeline, governance } = architectureForScale(scale, {});
-  L.push(`## Architecture at ${scale.toLocaleString()} users`);
-  L.push(`**Flow:** ${pipeline.map((k) => SVC[k].label).join(" → ")}`);
+  L.push(`## Architecture at ${scale.toLocaleString()} users / สถาปัตยกรรมที่ ${scale.toLocaleString()} ผู้ใช้`);
+  L.push(`**Flow / ลำดับ:** ${pipeline.map((k) => SVC[k].en).join(" → ")}`);
   L.push("");
-  for (const k of pipeline) L.push(`- **${SVC[k].label}** — ${SVC[k].aws}`);
+  for (const k of pipeline) L.push(`- **${SVC[k].en} / ${SVC[k].th}** — ${SVC[k].aws}`);
   if (governance.length) {
     L.push("");
-    L.push(`**Cross-cutting:**`);
-    for (const k of governance) L.push(`- **${SVC[k].label}** — ${SVC[k].aws}`);
+    L.push(`**Cross-cutting / องค์ประกอบร่วม:**`);
+    for (const k of governance) L.push(`- **${SVC[k].en} / ${SVC[k].th}** — ${SVC[k].aws}`);
   }
   L.push("");
 
   const idx = roadmapIndexForScale(scale);
-  L.push(`## Scaling roadmap`);
+  L.push(`## Scaling roadmap / แผนการสเกล`);
   ROADMAP.forEach((r, i) => {
     const mark = i < idx ? "x" : i === idx ? ">" : " ";
-    L.push(`- [${mark}] **${r.stage}** — ${r.detail}${i === idx ? "  _(you're here)_" : ""}`);
+    const here = i === idx ? "  _(you're here / คุณอยู่ที่นี่)_" : "";
+    L.push(`- [${mark}] **${r.stage.en} / ${r.stage.th}** — ${r.detail.en} · ${r.detail.th}${here}`);
   });
   L.push("");
   L.push(`---`);
-  L.push(`_Generated by Scale My AI._`);
+  L.push(`_Generated by Scale My AI / สร้างโดย Scale My AI_`);
   return L.join("\n");
 }
 
 /* ── Demo scenario: AI Assignment Grader ────────────────── */
 
 export const DEMO = {
-  name: "AI Assignment Grader",
-  blurb:
-    "A single HTML page that calls an AI API directly from the browser to grade essays. No login. Results kept in localStorage. Teachers upload a rubric and assignments.",
+  name: { en: "AI Assignment Grader", th: "ระบบ AI ตรวจงานนักเรียน" },
+  blurb: {
+    en: "A single HTML page that calls an AI API directly from the browser to grade essays. No login. Results kept in localStorage. Teachers upload a rubric and assignments.",
+    th: "หน้า HTML หน้าเดียวที่เรียก AI API ตรงจากเบราว์เซอร์เพื่อให้คะแนนเรียงความ ไม่มีล็อกอิน เก็บผลไว้ใน localStorage ครูอัปโหลดเกณฑ์และงานของนักเรียน",
+  },
   target: 10000,
   answers: {
     aiCalls: true,
