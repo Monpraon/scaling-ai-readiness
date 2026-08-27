@@ -223,27 +223,33 @@ export function assessRisks(a, target) {
     });
   }
 
-  const order = { high: 0, medium: 1, low: 2 };
-  return risks.sort((x, y) => order[x.sev] - order[y.sev]);
+  return risks.sort((x, y) => riskRank(x) - riskRank(y));
 }
 
-/* ── "What to fix next" — prioritised, de-duped from risks ── */
+// One ordering used everywhere: severity first, then a single importance
+// list. This guarantees "what breaks first" and "what to fix next" agree.
+const SEV_ORDER = { high: 0, medium: 1, low: 2 };
+const RISK_PRIORITY = [
+  "secrets",
+  "no-backend",
+  "no-auth",
+  "browser-data",
+  "sync-ai",
+  "uploads",
+  "no-logs",
+  "no-governance",
+];
+
+function riskRank(r) {
+  const p = RISK_PRIORITY.indexOf(r.id);
+  return SEV_ORDER[r.sev] * 100 + (p === -1 ? 99 : p);
+}
+
+/* ── "What to fix next" — same order as the risks above ─── */
 
 export function nextFixes(risks) {
-  const priority = [
-    "secrets",
-    "no-backend",
-    "no-auth",
-    "browser-data",
-    "uploads",
-    "sync-ai",
-    "no-logs",
-    "no-governance",
-  ];
-  return risks
-    .slice()
-    .sort((a, b) => priority.indexOf(a.id) - priority.indexOf(b.id))
-    .map((r) => r.fix);
+  // risks are already in final priority order; mirror them exactly.
+  return risks.map((r) => r.fix);
 }
 
 /* ── Roadmap ────────────────────────────────────────────── */
