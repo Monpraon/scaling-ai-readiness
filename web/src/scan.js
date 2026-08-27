@@ -104,62 +104,50 @@ const RE = {
   fileWrite: /fs\.(promises\.)?writeFile|fs\.createWriteStream|multer|formidable|busboy/i,
   uploadUI: /<input[^>]*type=["']file["']|multipart\/form-data|new FormData\(/i,
   logging: /winston|pino|bunyan|morgan|@sentry\/|cloudwatch|createLogger|loguru|structlog/i,
+  auth: /cognito|next-auth|passport|firebaseui|firebase[^\n]{0,40}auth|@clerk|auth0|jsonwebtoken|\bjwt\b|express-session|oauth|@supabase[^\n]{0,20}auth|lucia-auth|@auth\//i,
 };
 
-// Returns { answers, evidence } where answers use true/false (and omit
-// fields we genuinely can't determine, leaving them for the user).
+// Returns { answers, evidence }.
+// Detected ⇒ true. NOT detected ⇒ null ("unknown"), never a false "No" —
+// because absence of evidence in a scan is not evidence of absence.
+// Exceptions: aiCalls / secretsInClient / fileUploads default to false when
+// not found, since not finding them is meaningful good news.
 function analyze(files) {
   const evidence = [];
   const note = (signal, path, line) => evidence.push({ signal, path, line });
 
-  let secretsInClient = false;
-  let aiCalls = false;
-  let hasBackend = false;
-  let dataStore = "none";
-  let sawBrowserStore = false;
-  let sawDbLib = false;
-  let sawFileWrite = false;
-  let fileUploads = false;
-  let hasLogging = false;
+  let sawSecret = false, sawAi = false, sawBackend = false, sawAuth = false;
+  let sawDbLib = false, sawBrowserStore = false, sawFileWrite = false, sawUpload = false, sawLogging = false;
 
   for (const f of files) {
     const isClient = CLIENT_EXT.test(f.path);
     const lines = f.content.split(/\r?\n/);
     for (let i = 0; i < lines.length; i++) {
       const ln = lines[i];
-      if (isClient && !secretsInClient && RE.secret.test(ln)) {
-        secretsInClient = true;
-        note("secret", f.path, i + 1);
-      }
-      if (!aiCalls && RE.ai.test(ln)) {
-        aiCalls = true;
-        note("ai", f.path, i + 1);
-      }
+      if (isClient && !sawSecret && RE.secret.test(ln)) { sawSecret = true; note("secret", f.path, i + 1); }
+      if (!sawAi && RE.ai.test(ln)) { sawAi = true; note("ai", f.path, i + 1); }
     }
     const c = f.content;
-    if (!hasBackend && (RE.backendDep.test(c) || RE.backendFile.test(f.path))) {
-      hasBackend = true;
-      note("backend", f.path);
-    }
+    if (!sawBackend && (RE.backendDep.test(c) || RE.backendFile.test(f.path))) { sawBackend = true; note("backend", f.path); }
+    if (!sawAuth && RE.auth.test(c)) { sawAuth = true; note("auth", f.path); }
     if (RE.dbLib.test(c)) sawDbLib = true;
     if (RE.browserStore.test(c)) sawBrowserStore = true;
     if (RE.fileWrite.test(c)) sawFileWrite = true;
-    if (!fileUploads && RE.uploadUI.test(c)) {
-      fileUploads = true;
-      note("uploads", f.path);
-    }
-    if (!hasLogging && RE.logging.test(c)) {
-      hasLogging = true;
-      note("logging", f.path);
-    }
+    if (!sawUpload && RE.uploadUI.test(c)) { sawUpload = true; note("uploads", f.path); }
+    if (!sawLogging && RE.logging.test(c)) { sawLogging = true; note("logging", f.path); }
   }
 
-  if (sawDbLib) dataStore = "db";
-  else if (sawFileWrite) dataStore = "files";
-  else if (sawBrowserStore) dataStore = "browser";
-  else dataStore = "none";
+  const dataStore = sawDbLib ? "db" : sawFileWrite ? "files" : sawBrowserStore ? "browser" : "unknown";
 
-  const answers = { aiCalls, secretsInClient, hasBackend, dataStore, fileUploads, hasLogging };
+  const answers = {
+    aiCalls: sawAi,                       // false = no AI refs found (meaningful)
+    secretsInClient: sawSecret,           // false = no key found in frontend (good)
+    fileUploads: sawUpload,               // false = no upload UI found
+    hasBackend: sawBackend ? true : null, // null = not seen (may exist elsewhere)
+    hasAuth: sawAuth ? true : null,
+    hasLogging: sawLogging ? true : null,
+    dataStore,                            // "unknown" = couldn't tell
+  };
   return { answers, evidence };
 }
 

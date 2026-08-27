@@ -353,6 +353,73 @@ export function isReady(risks) {
   return !risks.some((r) => r.sev === "high");
 }
 
+// For repo-sourced reports: things we did NOT see in the scanned files.
+// These are WARNINGS, not accusations — the component may exist somewhere
+// the scan didn't reach. Only emitted when relevant at the target scale.
+export function scanWarnings(a, target) {
+  const w = [];
+  const big = target >= 100;
+  const huge = target >= 1000;
+  const massive = target >= 10000;
+
+  if (big && a.hasAuth !== true) {
+    w.push({
+      id: "nd-auth",
+      title: { en: "No authentication detected", th: "ไม่พบระบบยืนยันตัวตน" },
+      why: {
+        en: "We didn't find login/auth code in the files we scanned. If it lives elsewhere, ignore this. If it's truly missing, 100+ users can't be told apart or protected.",
+        th: "เราไม่พบโค้ดล็อกอิน/ยืนยันตัวตนในไฟล์ที่สแกน ถ้ามีอยู่ที่อื่นให้ข้ามได้ แต่ถ้าไม่มีจริง เมื่อผู้ใช้ 100+ คนจะแยกผู้ใช้และปกป้องข้อมูลไม่ได้",
+      },
+      fix: { en: "Add authentication (e.g. Cognito) before opening up.", th: "เพิ่มระบบล็อกอิน (เช่น Cognito) ก่อนเปิดให้คนใช้" },
+    });
+  }
+  if ((a.aiCalls === true || big) && a.hasBackend !== true) {
+    w.push({
+      id: "nd-backend",
+      title: { en: "No backend detected", th: "ไม่พบเซิร์ฟเวอร์หลังบ้าน" },
+      why: {
+        en: "We didn't find server code. If there's a backend elsewhere, ignore this. If not, you can't safely hold secrets, authenticate, or control cost.",
+        th: "เราไม่พบโค้ดฝั่งเซิร์ฟเวอร์ ถ้ามีหลังบ้านอยู่ที่อื่นให้ข้ามได้ แต่ถ้าไม่มี คุณจะเก็บความลับ ยืนยันตัวตน หรือคุมค่าใช้จ่ายอย่างปลอดภัยไม่ได้",
+      },
+      fix: { en: "Add API Gateway + Lambda as a trusted server layer.", th: "เพิ่ม API Gateway + Lambda เป็นชั้นเซิร์ฟเวอร์ที่เชื่อถือได้" },
+    });
+  }
+  if (big && (a.dataStore === "unknown" || a.dataStore === "none" || a.dataStore == null)) {
+    w.push({
+      id: "nd-data",
+      title: { en: "Couldn't tell where data is stored", th: "ระบุที่เก็บข้อมูลไม่ได้" },
+      why: {
+        en: "No database or storage library was detected. If data lives only in the browser, it won't survive across devices or users.",
+        th: "ไม่พบไลบรารีฐานข้อมูลหรือที่เก็บข้อมูล ถ้าข้อมูลอยู่ในเบราว์เซอร์อย่างเดียว จะไม่คงอยู่ข้ามเครื่องหรือข้ามผู้ใช้",
+      },
+      fix: { en: "Use a persistent store (DynamoDB) behind your API.", th: "ใช้ที่เก็บถาวร (DynamoDB) หลัง API" },
+    });
+  }
+  if (huge && a.hasLogging !== true) {
+    w.push({
+      id: "nd-logs",
+      title: { en: "No logging/monitoring detected", th: "ไม่พบการเก็บ log/เฝ้าระวัง" },
+      why: {
+        en: "We didn't find logging in the scanned files. At scale you can't debug failures or spot abuse you can't see.",
+        th: "เราไม่พบการเก็บ log ในไฟล์ที่สแกน เมื่อสเกลใหญ่ขึ้น คุณจะดีบักปัญหาไม่ได้และมองไม่เห็นการใช้ผิด",
+      },
+      fix: { en: "Add CloudWatch logs, metrics, and alarms.", th: "เพิ่ม CloudWatch สำหรับ log เมตริก และการแจ้งเตือน" },
+    });
+  }
+  if (massive && a.aiCalls === true && a.humanReview !== true) {
+    w.push({
+      id: "nd-governance",
+      title: { en: "No human review detected", th: "ไม่พบการตรวจโดยมนุษย์" },
+      why: {
+        en: "At organisation scale, unreviewed AI output becomes a compliance and trust risk.",
+        th: "ที่ระดับองค์กร ผลลัพธ์ AI ที่ไม่มีคนตรวจกลายเป็นความเสี่ยงด้านการปฏิบัติตามกฎและความน่าเชื่อถือ",
+      },
+      fix: { en: "Add an approval step and an audit trail.", th: "เพิ่มขั้นตอนอนุมัติและบันทึกตรวจสอบ" },
+    });
+  }
+  return w;
+}
+
 /* ── Roadmap ────────────────────────────────────────────── */
 
 export const ROADMAP = [

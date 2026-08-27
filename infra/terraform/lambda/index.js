@@ -248,27 +248,42 @@ const SRE = {
   fileWrite: /fs\.(promises\.)?writeFile|fs\.createWriteStream|multer|formidable|busboy/i,
   uploadUI: /<input[^>]*type=["']file["']|multipart\/form-data|new FormData\(/i,
   logging: /winston|pino|bunyan|morgan|@sentry\/|cloudwatch|createLogger|loguru|structlog/i,
+  auth: /cognito|next-auth|passport|firebaseui|firebase[^\n]{0,40}auth|@clerk|auth0|jsonwebtoken|\bjwt\b|express-session|oauth|@supabase[^\n]{0,20}auth|lucia-auth|@auth\//i,
 };
 
+// Mirrors web/src/scan.js: detected ⇒ true; not seen ⇒ null (unknown) for
+// components that may live elsewhere; false only where absence is telling.
 function detect(files) {
   const evidence = [];
-  let secretsInClient = false, aiCalls = false, hasBackend = false;
-  let sawDb = false, sawBrowser = false, sawFileWrite = false, fileUploads = false, hasLogging = false;
+  let sawSecret = false, sawAi = false, sawBackend = false, sawAuth = false;
+  let sawDb = false, sawBrowser = false, sawFileWrite = false, sawUpload = false, sawLogging = false;
 
   for (const f of files) {
     const isClient = CLIENT_EXT.test(f.path);
     const c = f.content;
-    if (isClient && !secretsInClient && SRE.secret.test(c)) { secretsInClient = true; evidence.push({ signal: "secret", path: f.path }); }
-    if (!aiCalls && SRE.ai.test(c)) { aiCalls = true; evidence.push({ signal: "ai", path: f.path }); }
-    if (!hasBackend && (SRE.backendDep.test(c) || SRE.backendFile.test(f.path))) { hasBackend = true; evidence.push({ signal: "backend", path: f.path }); }
+    if (isClient && !sawSecret && SRE.secret.test(c)) { sawSecret = true; evidence.push({ signal: "secret", path: f.path }); }
+    if (!sawAi && SRE.ai.test(c)) { sawAi = true; evidence.push({ signal: "ai", path: f.path }); }
+    if (!sawBackend && (SRE.backendDep.test(c) || SRE.backendFile.test(f.path))) { sawBackend = true; evidence.push({ signal: "backend", path: f.path }); }
+    if (!sawAuth && SRE.auth.test(c)) { sawAuth = true; evidence.push({ signal: "auth", path: f.path }); }
     if (SRE.dbLib.test(c)) sawDb = true;
     if (SRE.browserStore.test(c)) sawBrowser = true;
     if (SRE.fileWrite.test(c)) sawFileWrite = true;
-    if (!fileUploads && SRE.uploadUI.test(c)) { fileUploads = true; evidence.push({ signal: "uploads", path: f.path }); }
-    if (!hasLogging && SRE.logging.test(c)) { hasLogging = true; evidence.push({ signal: "logging", path: f.path }); }
+    if (!sawUpload && SRE.uploadUI.test(c)) { sawUpload = true; evidence.push({ signal: "uploads", path: f.path }); }
+    if (!sawLogging && SRE.logging.test(c)) { sawLogging = true; evidence.push({ signal: "logging", path: f.path }); }
   }
-  const dataStore = sawDb ? "db" : sawFileWrite ? "files" : sawBrowser ? "browser" : "none";
-  return { answers: { aiCalls, secretsInClient, hasBackend, dataStore, fileUploads, hasLogging }, evidence };
+  const dataStore = sawDb ? "db" : sawFileWrite ? "files" : sawBrowser ? "browser" : "unknown";
+  return {
+    answers: {
+      aiCalls: sawAi,
+      secretsInClient: sawSecret,
+      fileUploads: sawUpload,
+      hasBackend: sawBackend ? true : null,
+      hasAuth: sawAuth ? true : null,
+      hasLogging: sawLogging ? true : null,
+      dataStore,
+    },
+    evidence,
+  };
 }
 
 async function gh(path, token, accept) {

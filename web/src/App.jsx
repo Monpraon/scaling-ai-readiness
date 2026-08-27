@@ -10,6 +10,7 @@ import {
   assessRisks,
   nextFixes,
   isReady,
+  scanWarnings,
   ROADMAP,
   roadmapIndexForScale,
   architectureForScale,
@@ -40,7 +41,7 @@ const C = {
   faint: "#5C5C66",
 };
 
-const SEV = { high: C.red, medium: C.amber, low: C.cyan };
+const SEV = { high: C.red, medium: C.amber, low: C.cyan, warn: C.cyan };
 
 /* bilingual UI strings */
 const UI = {
@@ -119,7 +120,11 @@ const UI = {
   errInvalid: { en: "That doesn't look like a GitHub URL.", th: "ลิงก์นี้ไม่เหมือน URL ของ GitHub" },
   errScan: { en: "Couldn't scan that repo. You can continue with the questionnaire.", th: "สแกน repo ไม่สำเร็จ คุณทำแบบสอบถามต่อได้" },
   continueManual: { en: "Continue with the questionnaire →", th: "ทำแบบสอบถามต่อ →" },
-  reviewAnswers: { en: "Review answers →", th: "ตรวจคำตอบ →" },
+  seeReport: { en: "See my report →", th: "ดูรายงานของฉัน →" },
+  notDetected: { en: "Not detected — worth checking", th: "ไม่พบ — ควรตรวจสอบ" },
+  fromRepo: { en: "Read from your repo", th: "อ่านจาก repo ของคุณ" },
+  scannedNote: { en: "based on the files we could read; components may exist elsewhere.", th: "อ้างอิงจากไฟล์ที่อ่านได้ องค์ประกอบอาจมีอยู่ที่อื่น" },
+  editManual: { en: "Something off? Answer manually", th: "ไม่ตรง? ตอบเอง" },
   statsLink: { en: "See community stats", th: "ดูสถิติรวม" },
   statsTitle: { en: "What we're seeing", th: "ภาพรวมที่เราเห็น" },
   statsSub: { en: "Anonymous, aggregate — no code or URLs stored.", th: "ไม่ระบุตัวตนและเป็นภาพรวม — ไม่เก็บโค้ดหรือ URL" },
@@ -275,12 +280,14 @@ export default function App() {
   const [meta, setMeta] = useState({ url: "", description: "" });
   const [target, setTarget] = useState(1000);
   const [answers, setAnswers] = useState({});
+  const [scanMeta, setScanMeta] = useState(null); // { repo, filesScanned } when repo-sourced
 
   const startDemo = () => {
     setPath("demo");
     setMeta({ url: "", description: `${DEMO.blurb.en} / ${DEMO.blurb.th}` });
     setTarget(DEMO.target);
     setAnswers(DEMO.answers);
+    setScanMeta(null);
     setView("report");
   };
 
@@ -289,6 +296,7 @@ export default function App() {
     setMeta({ url: "", description: "" });
     setTarget(1000);
     setAnswers({});
+    setScanMeta(null);
   };
 
   return (
@@ -339,15 +347,27 @@ export default function App() {
             setMeta={setMeta}
             target={target}
             setTarget={setTarget}
-            onNext={() => setView("assess")}
-            onScanned={(detected) => { setAnswers(detected); setView("assess"); }}
+            onNext={() => { setScanMeta(null); setView("assess"); }}
+            onScanned={(result) => {
+              setAnswers(result.answers);
+              setScanMeta({ repo: result.repo, filesScanned: result.filesScanned });
+              setView("report");
+            }}
           />
         )}
         {view === "assess" && (
           <Assess answers={answers} setAnswers={setAnswers} onDone={() => setView("report")} onBack={() => setView("input")} />
         )}
         {view === "report" && (
-          <Report path={path} meta={meta} answers={answers} target={target} onAgain={() => { setView("home"); reset(); }} />
+          <Report
+            path={path}
+            meta={meta}
+            answers={answers}
+            target={target}
+            scanMeta={scanMeta}
+            onEditManually={() => setView("assess")}
+            onAgain={() => { setView("home"); reset(); }}
+          />
         )}
       </div>
     </div>
@@ -695,7 +715,7 @@ function InputScreen({ path, meta, setMeta, target, setTarget, onNext, onScanned
       </div>
 
       {isRepo && scanState === "done" && result ? (
-        <BiBtn full label={UI.reviewAnswers} onClick={() => onScanned(result.answers)} />
+        <BiBtn full label={UI.seeReport} onClick={() => onScanned(result)} />
       ) : (
         <BiBtn full label={isRepo ? UI.continueManual : UI.continue} onClick={onNext} ghost={isRepo} />
       )}
@@ -780,11 +800,12 @@ function Assess({ answers, setAnswers, onDone, onBack }) {
   );
 }
 
-function Report({ path, meta, answers, target, onAgain }) {
+function Report({ path, meta, answers, target, scanMeta, onEditManually, onAgain }) {
   const [scale, setScale] = useState(target);
   const [cloud, setCloud] = useState("aws");
   const risks = useMemo(() => assessRisks(answers, target), [answers, target]);
   const fixes = useMemo(() => nextFixes(risks), [risks]);
+  const warnings = useMemo(() => (scanMeta ? scanWarnings(answers, target) : []), [answers, target, scanMeta]);
   const roadmapIdx = roadmapIndexForScale(scale);
 
   const [aiState, setAiState] = useState("idle");
@@ -793,7 +814,7 @@ function Report({ path, meta, answers, target, onAgain }) {
   // Record one anonymous, content-free stat when the report is produced.
   useEffect(() => {
     recordStats({
-      ready: isReady(risks),
+      ready: isReady(risks) && warnings.length === 0,
       riskIds: risks.map((r) => r.id),
       target,
       cloud,
@@ -829,11 +850,29 @@ function Report({ path, meta, answers, target, onAgain }) {
         Ready for {target.toLocaleString()} users?
       </h2>
       <p style={{ color: C.mut, fontSize: 14, margin: "0 0 6px" }}>พร้อมสำหรับ {target.toLocaleString()} คนหรือยัง</p>
-      <p style={{ color: C.faint, fontSize: 13, margin: "0 0 22px" }}>
+      <p style={{ color: C.faint, fontSize: 13, margin: "0 0 16px" }}>
         {risks.length === 0
           ? "No blocking risks detected. · ไม่พบความเสี่ยงที่ปิดกั้น"
           : `${risks.length} to address before you get there. · มี ${risks.length} เรื่องที่ต้องจัดการก่อน`}
       </p>
+
+      {/* provenance: this report came from reading the repo */}
+      {scanMeta && (
+        <div style={{ background: "rgba(56,225,198,0.06)", border: `1px solid ${C.accentDim}`, borderRadius: 12, padding: "11px 14px", marginBottom: 22 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: C.cyan }}>
+            {UI.fromRepo.en} · {UI.fromRepo.th}
+          </div>
+          <div style={{ fontSize: 12, color: C.mut, marginTop: 2 }}>
+            {scanMeta.repo} · {scanMeta.filesScanned} {UI.filesScanned.en} — {UI.scannedNote.en}
+          </div>
+          <button
+            onClick={onEditManually}
+            style={{ marginTop: 6, background: "none", border: "none", color: C.faint, fontSize: 11.5, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 3, padding: 0 }}
+          >
+            {UI.editManual.en} · {UI.editManual.th}
+          </button>
+        </div>
+      )}
 
       {/* A — what breaks first */}
       <Eyebrow en={UI.breakFirst.en} th={UI.breakFirst.th} />
@@ -873,6 +912,29 @@ function Report({ path, meta, answers, target, onAgain }) {
                   <div style={{ fontSize: 13.5, lineHeight: 1.5 }}>{f.en}</div>
                   <div style={{ fontSize: 12.5, color: C.mut, lineHeight: 1.5 }}>{f.th}</div>
                 </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Not detected — worth checking (repo scans only) */}
+      {warnings.length > 0 && (
+        <>
+          <Eyebrow en={UI.notDetected.en} th={UI.notDetected.th} />
+          <div style={{ display: "grid", gap: 10, marginBottom: 26 }}>
+            {warnings.map((wn) => (
+              <div key={wn.id} style={{ background: C.card, border: `1px dashed ${C.cyan}`, borderRadius: 12, padding: "13px 15px" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 9, marginBottom: 5 }}>
+                  <span style={{ color: C.cyan, fontWeight: 800, fontSize: 14, marginTop: 1 }}>?</span>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: 14 }}>{wn.title.en}</div>
+                    <div style={{ fontWeight: 700, fontSize: 12.5, color: C.mut }}>{wn.title.th}</div>
+                  </div>
+                </div>
+                <div style={{ color: C.mut, fontSize: 12.5, lineHeight: 1.5 }}>{wn.why.en}</div>
+                <div style={{ color: C.faint, fontSize: 12, lineHeight: 1.5, marginTop: 2 }}>{wn.why.th}</div>
+                <div style={{ color: C.cyan, fontSize: 12.5, marginTop: 6 }}>→ {wn.fix.en} · {wn.fix.th}</div>
               </div>
             ))}
           </div>
