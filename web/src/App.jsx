@@ -17,7 +17,7 @@ import {
   DEMO,
 } from "./engine";
 import { scanRepo, RepoAccessError } from "./scan";
-import { explainFindings, recordStats, loadStats, hasBackend } from "./api";
+import { explainFindings, recordStats, loadStats, scanRepoBackend, hasBackend } from "./api";
 
 const BRAND = {
   name: import.meta.env.VITE_BRAND_NAME ?? "Scale My AI",
@@ -103,8 +103,8 @@ const UI = {
   again: { en: "Run another assessment", th: "ประเมินใหม่อีกครั้ง" },
   consentTitle: { en: "Permission to read your repo", th: "ขออนุญาตอ่าน repo ของคุณ" },
   consentBody: {
-    en: "To analyze your app we read your public repository's code in your browser. We do NOT store your code or the repo URL. We keep only anonymous statistics about the components we detect (e.g. how many apps have auth).",
-    th: "เพื่อวิเคราะห์แอป เราจะอ่านโค้ดใน repo สาธารณะของคุณผ่านเบราว์เซอร์ เราไม่เก็บโค้ดหรือ URL ของ repo เราเก็บเพียงสถิติแบบไม่ระบุตัวตนเกี่ยวกับองค์ประกอบที่ตรวจพบ (เช่น มีกี่แอปที่มีระบบล็อกอิน)",
+    en: "To analyze your app we read your repository's code (public repos in your browser; private repos via our server using a read-only token). We do NOT store your code or the repo URL. We keep only anonymous statistics about the components we detect (e.g. how many apps have auth).",
+    th: "เพื่อวิเคราะห์แอป เราจะอ่านโค้ดใน repo ของคุณ (repo สาธารณะผ่านเบราว์เซอร์ ส่วน repo ส่วนตัวผ่านเซิร์ฟเวอร์ด้วยโทเคนแบบอ่านอย่างเดียว) เราไม่เก็บโค้ดหรือ URL เราเก็บเพียงสถิติแบบไม่ระบุตัวตนเกี่ยวกับองค์ประกอบที่ตรวจพบ (เช่น มีกี่แอปที่มีระบบล็อกอิน)",
   },
   consentAgree: { en: "I agree — scan my repo", th: "ฉันยินยอม — สแกน repo" },
   scanning: { en: "Reading your repo…", th: "กำลังอ่าน repo…" },
@@ -578,6 +578,20 @@ function InputScreen({ path, meta, setMeta, target, setTarget, onNext, onScanned
       setScanState("done");
     } catch (e) {
       const kind = e instanceof RepoAccessError ? e.kind : "error";
+      // Public scan failed because the repo is private/missing — if a
+      // backend token is configured, try the server-side scan.
+      if (kind === "private_or_missing" && hasBackend) {
+        try {
+          const r = await scanRepoBackend(meta.url);
+          setResult(r);
+          setScanState("done");
+          return;
+        } catch (be) {
+          setScanErr(be.code === "not-configured" ? UI.errPrivate : be.code === "auth" ? UI.errPrivate : be.code === "not-found" ? UI.errPrivate : UI.errScan);
+          setScanState("error");
+          return;
+        }
+      }
       setScanErr(
         kind === "invalid" ? UI.errInvalid : kind === "ratelimited" ? UI.errRate : kind === "private_or_missing" ? UI.errPrivate : UI.errScan
       );

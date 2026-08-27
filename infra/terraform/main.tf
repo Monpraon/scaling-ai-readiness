@@ -95,6 +95,35 @@ resource "aws_iam_role_policy" "lambda" {
   })
 }
 
+# Separate, conditional policy so private-repo scanning only grants SSM/KMS
+# access when a token parameter is actually configured.
+resource "aws_iam_role_policy" "lambda_ssm" {
+  count = var.github_token_ssm_name == "" ? 0 : 1
+  name  = "${local.name}-lambda-ssm"
+  role  = aws_iam_role.lambda.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ReadGithubToken"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter"]
+        Resource = "arn:aws:ssm:${local.region}:${local.account_id}:parameter${var.github_token_ssm_name}"
+      },
+      {
+        Sid      = "DecryptGithubToken"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = "*"
+        Condition = {
+          StringEquals = { "kms:ViaService" = "ssm.${local.region}.amazonaws.com" }
+        }
+      },
+    ]
+  })
+}
+
 resource "aws_cloudwatch_log_group" "lambda" {
   name              = "/aws/lambda/${local.name}-api"
   retention_in_days = var.log_retention_days
@@ -121,6 +150,7 @@ resource "aws_lambda_function" "api" {
       MAX_AI_REQUESTS_PER_DAY   = tostring(var.max_ai_requests_per_day)
       MAX_OUTPUT_TOKENS         = tostring(var.max_output_tokens)
       ALLOWED_ORIGIN            = local.cors_origin
+      GITHUB_TOKEN_PARAM        = var.github_token_ssm_name
     }
   }
 
@@ -153,6 +183,7 @@ resource "aws_apigatewayv2_integration" "lambda" {
 locals {
   routes = [
     "POST /analyze",
+    "POST /scan",
     "POST /stats",
     "GET /stats/summary",
   ]

@@ -25,6 +25,13 @@ enable_frontend_hosting = true
 # yet verified for CloudFront).
 frontend_hosting_mode = "cloudfront"
 
+# Optional: enable PRIVATE-repo scanning. Create the SecureString yourself so
+# the token never enters Terraform/state:
+#   aws ssm put-parameter --name /scale-my-ai/github-token \
+#     --type SecureString --value github_pat_xxx
+# Then set the name here. Leave empty to disable (public repos still scan).
+# github_token_ssm_name = "/scale-my-ai/github-token"
+
 tags = {
   Environment = "prod"
 }

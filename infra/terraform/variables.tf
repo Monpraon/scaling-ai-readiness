@@ -94,6 +94,12 @@ variable "enable_frontend_hosting" {
   default     = true
 }
 
+variable "github_token_ssm_name" {
+  description = "SSM Parameter Store name (SecureString) holding a GitHub token used to scan PRIVATE repos. Create it yourself so the secret never enters Terraform/state: aws ssm put-parameter --name /scale-my-ai/github-token --type SecureString --value <TOKEN>. Leave empty to disable private-repo scanning (public repos still scan client-side; /scan returns 501)."
+  type        = string
+  default     = ""
+}
+
 variable "frontend_hosting_mode" {
   description = "How to host the frontend: \"cloudfront\" (private S3 + CloudFront + HTTPS, recommended) or \"s3_website\" (public S3 website, HTTP only — useful for accounts not yet verified for CloudFront)."
   type        = string

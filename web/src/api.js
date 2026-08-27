@@ -32,6 +32,33 @@ export async function recordStats(payload) {
   }
 }
 
+// Server-side scan for PRIVATE repos (uses the backend's GitHub token).
+// Returns the same shape as the client-side scanner, or throws with a
+// .code so the UI can explain ("not-configured", "auth", "not-found", …).
+export async function scanRepoBackend(url) {
+  if (!hasBackend) {
+    const e = new Error("no-backend");
+    e.code = "no-backend";
+    throw e;
+  }
+  const res = await fetch(`${API_BASE}/scan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (res.status === 501) {
+    const e = new Error("scan-not-configured");
+    e.code = "not-configured";
+    throw e;
+  }
+  if (!res.ok) {
+    const e = new Error(`scan ${res.status}`);
+    e.code = res.status === 404 ? "not-found" : res.status === 502 ? "auth" : "error";
+    throw e;
+  }
+  return res.json();
+}
+
 export async function loadStats() {
   if (!hasBackend) throw new Error("no-backend");
   const res = await fetch(`${API_BASE}/stats/summary`);
