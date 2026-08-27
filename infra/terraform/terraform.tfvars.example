@@ -1,0 +1,26 @@
+# Copy to terraform.tfvars and adjust. terraform.tfvars is gitignored —
+# it must never be committed to any repo.
+
+aws_region   = "us-east-1"
+project_name = "scaling-ai-readiness"
+
+# Bedrock models (Converse API). Nova Micro is the cheap default.
+bedrock_model_id          = "amazon.nova-micro-v1:0"
+bedrock_fallback_model_id = "amazon.nova-lite-v1:0"
+
+# Cost / abuse guards
+max_ai_requests_per_day     = 2000
+max_input_chars             = 8000
+lambda_reserved_concurrency = 20
+api_throttle_rate           = 20
+api_throttle_burst          = 40
+
+# CORS — lock to your site origin in production, e.g.:
+# allowed_origins = ["https://your-domain.example"]
+allowed_origins = ["*"]
+
+enable_frontend_hosting = true
+
+tags = {
+  Environment = "prod"
+}

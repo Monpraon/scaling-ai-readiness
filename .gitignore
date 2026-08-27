@@ -1,0 +1,34 @@
+# ── Node / frontend ───────────────────────────────────────
+node_modules/
+dist/
+web/dist/
+*.local
+
+# ── Env / secrets (NEVER commit real values) ──────────────
+.env
+.env.*
+!.env.example
+
+# ── Terraform (state + local vars must never be committed) ─
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+.build/
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform.lock.hcl
+# Real remote-state config stays local; only the .example is tracked.
+backend.tf
+
+# ── OS / editor ───────────────────────────────────────────
+.DS_Store
+*.swp
+.idea/
+.vscode/
