@@ -32,6 +32,15 @@ frontend_hosting_mode = "cloudfront"
 # Then set the name here. Leave empty to disable (public repos still scan).
 # github_token_ssm_name = "/scale-my-ai/github-token"
 
+# Optional: external LLM for the "Explain in plain language" feature. Used
+# only if Bedrock is unavailable. Works with any OpenAI-compatible API
+# (OpenAI, OpenRouter, Groq, DeepSeek, Together, Mistral, xAI...). Store the
+# key yourself so it never enters Terraform/state:
+#   aws ssm put-parameter --name /scale-my-ai/llm-api-key --type SecureString --value <KEY>
+# llm_api_key_ssm_name = "/scale-my-ai/llm-api-key"
+# llm_base_url         = "https://openrouter.ai/api/v1"
+# llm_model            = "openai/gpt-4o-mini"
+
 tags = {
   Environment = "prod"
 }

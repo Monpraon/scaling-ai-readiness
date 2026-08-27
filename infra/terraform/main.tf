@@ -95,10 +95,14 @@ resource "aws_iam_role_policy" "lambda" {
   })
 }
 
-# Separate, conditional policy so private-repo scanning only grants SSM/KMS
-# access when a token parameter is actually configured.
+locals {
+  ssm_param_names = compact([var.github_token_ssm_name, var.llm_api_key_ssm_name])
+}
+
+# Separate, conditional policy so SSM/KMS access is granted only for the
+# secret parameters that are actually configured (GitHub token, LLM key).
 resource "aws_iam_role_policy" "lambda_ssm" {
-  count = var.github_token_ssm_name == "" ? 0 : 1
+  count = length(local.ssm_param_names) > 0 ? 1 : 0
   name  = "${local.name}-lambda-ssm"
   role  = aws_iam_role.lambda.id
 
@@ -106,13 +110,13 @@ resource "aws_iam_role_policy" "lambda_ssm" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid      = "ReadGithubToken"
+        Sid      = "ReadSecrets"
         Effect   = "Allow"
         Action   = ["ssm:GetParameter"]
-        Resource = "arn:aws:ssm:${local.region}:${local.account_id}:parameter${var.github_token_ssm_name}"
+        Resource = [for n in local.ssm_param_names : "arn:aws:ssm:${local.region}:${local.account_id}:parameter${n}"]
       },
       {
-        Sid      = "DecryptGithubToken"
+        Sid      = "DecryptSecrets"
         Effect   = "Allow"
         Action   = ["kms:Decrypt"]
         Resource = "*"
@@ -151,6 +155,9 @@ resource "aws_lambda_function" "api" {
       MAX_OUTPUT_TOKENS         = tostring(var.max_output_tokens)
       ALLOWED_ORIGIN            = local.cors_origin
       GITHUB_TOKEN_PARAM        = var.github_token_ssm_name
+      LLM_API_KEY_PARAM         = var.llm_api_key_ssm_name
+      LLM_BASE_URL              = var.llm_base_url
+      LLM_MODEL                 = var.llm_model
     }
   }
 

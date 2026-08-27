@@ -100,6 +100,24 @@ variable "github_token_ssm_name" {
   default     = ""
 }
 
+variable "llm_api_key_ssm_name" {
+  description = "SSM Parameter Store name (SecureString) holding an OpenAI-compatible API key, used to explain findings when Bedrock is unavailable. Create it yourself: aws ssm put-parameter --name /scale-my-ai/llm-api-key --type SecureString --value <KEY>. Leave empty to disable the external LLM fallback."
+  type        = string
+  default     = ""
+}
+
+variable "llm_base_url" {
+  description = "Base URL for an OpenAI-compatible chat completions API (e.g. https://api.openai.com/v1, https://api.groq.com/openai/v1, https://api.deepseek.com/v1, https://openrouter.ai/api/v1)."
+  type        = string
+  default     = "https://api.openai.com/v1"
+}
+
+variable "llm_model" {
+  description = "Model name for the external LLM fallback (e.g. gpt-4o-mini, llama-3.1-8b-instant, deepseek-chat)."
+  type        = string
+  default     = "gpt-4o-mini"
+}
+
 variable "frontend_hosting_mode" {
   description = "How to host the frontend: \"cloudfront\" (private S3 + CloudFront + HTTPS, recommended) or \"s3_website\" (public S3 website, HTTP only — useful for accounts not yet verified for CloudFront)."
   type        = string

@@ -38,6 +38,9 @@ const bedrock = new BedrockRuntimeClient({ region: REGION });
 const ssm = new SSMClient({ region: REGION });
 
 const GITHUB_TOKEN_PARAM = process.env.GITHUB_TOKEN_PARAM || "";
+const LLM_API_KEY_PARAM = process.env.LLM_API_KEY_PARAM || "";
+const LLM_BASE_URL = (process.env.LLM_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
+const LLM_MODEL = process.env.LLM_MODEL || "gpt-4o-mini";
 
 const CORS = {
   "Access-Control-Allow-Origin": CORS_ORIGIN,
@@ -179,6 +182,42 @@ async function converse(modelId, prompt) {
   return parts.map((p) => p.text || "").join("\n").trim();
 }
 
+// Cached SSM secret reader (used for the GitHub token and the LLM key).
+const secretCache = {};
+async function readSecret(paramName) {
+  if (!paramName) return "";
+  if (secretCache[paramName]) return secretCache[paramName];
+  try {
+    const out = await ssm.send(new GetParameterCommand({ Name: paramName, WithDecryption: true }));
+    const v = out.Parameter?.Value || "";
+    if (v) secretCache[paramName] = v; // cache only successful reads
+    return v;
+  } catch (e) {
+    console.warn("could not read secret param:", paramName, e?.name);
+    return "";
+  }
+}
+
+// OpenAI-compatible chat completions — works with OpenAI, Groq, Together,
+// DeepSeek, Mistral, OpenRouter, xAI, etc. Used when Bedrock is unavailable.
+async function externalLLM(prompt) {
+  const key = await readSecret(LLM_API_KEY_PARAM);
+  if (!key) throw new Error("no-llm-key");
+  const res = await fetch(`${LLM_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model: LLM_MODEL,
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: MAX_OUTPUT_TOKENS,
+      temperature: 0.4,
+    }),
+  });
+  if (!res.ok) throw new Error(`llm ${res.status}`);
+  const data = await res.json();
+  return (data.choices?.[0]?.message?.content || "").trim();
+}
+
 async function analyze(payload) {
   const used = await bumpBudget();
   if (used > MAX_AI_PER_DAY) return reply(429, { error: "quota" });
@@ -187,10 +226,16 @@ async function analyze(payload) {
   let explanation;
   try {
     explanation = await converse(MODEL_ID, prompt);
-  } catch (e) {
-    console.warn("primary model failed, trying fallback:", e?.name);
-    explanation = await converse(FALLBACK_MODEL_ID, prompt);
+  } catch (e1) {
+    console.warn("primary Bedrock model failed:", e1?.name);
+    try {
+      explanation = await converse(FALLBACK_MODEL_ID, prompt);
+    } catch (e2) {
+      console.warn("fallback Bedrock model failed:", e2?.name, "— trying external LLM");
+      explanation = await externalLLM(prompt); // throws if no key configured
+    }
   }
+  if (!explanation) return reply(502, { error: "empty" });
   return reply(200, { explanation });
 }
 
@@ -199,18 +244,8 @@ async function analyze(payload) {
    token from SSM SecureString so it never touches the browser or the
    repo. Repo contents are held only in memory and discarded. */
 
-let cachedToken = "";
 async function githubToken() {
-  if (cachedToken) return cachedToken; // cache only successful reads
-  if (!GITHUB_TOKEN_PARAM) return "";
-  try {
-    const out = await ssm.send(new GetParameterCommand({ Name: GITHUB_TOKEN_PARAM, WithDecryption: true }));
-    cachedToken = out.Parameter?.Value || "";
-  } catch (e) {
-    console.warn("could not read github token param:", e?.name);
-    // don't cache failure — lets it work as soon as the param is created
-  }
-  return cachedToken;
+  return readSecret(GITHUB_TOKEN_PARAM);
 }
 
 function parseRepoUrl(input) {
