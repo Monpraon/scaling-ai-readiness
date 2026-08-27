@@ -22,6 +22,7 @@ const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
 const { DynamoDBDocumentClient, UpdateCommand, GetCommand } = require("@aws-sdk/lib-dynamodb");
 const { BedrockRuntimeClient, ConverseCommand } = require("@aws-sdk/client-bedrock-runtime");
 const { SSMClient, GetParameterCommand } = require("@aws-sdk/client-ssm");
+const fflate = require("./fflate.js");
 
 const REGION = process.env.AWS_REGION;
 const TABLE = process.env.TABLE_NAME;
@@ -332,12 +333,22 @@ async function gh(path, token, accept) {
   });
 }
 
+// Router: GitHub repo, Google Drive shared file/ZIP, or unsupported.
 async function scan(payload) {
+  const url = payload && payload.url;
+  const drive = parseDriveUrl(url);
+  if (drive) {
+    if (drive.folder || drive.unknown) return reply(400, { error: "drive-folder" });
+    return await scanDrive(drive.id);
+  }
+  const ref = parseRepoUrl(url);
+  if (ref) return await scanGithub(ref);
+  return reply(400, { error: "unsupported" });
+}
+
+async function scanGithub(ref) {
   const token = await githubToken();
   if (!token) return reply(501, { error: "scan-not-configured" });
-
-  const ref = parseRepoUrl(payload && payload.url);
-  if (!ref) return reply(400, { error: "invalid" });
 
   let branch = null;
   let tree = null;
@@ -367,8 +378,70 @@ async function scan(payload) {
   if (files.length === 0) return reply(404, { error: "empty" });
 
   const { answers, evidence } = detect(files);
-  // Contents discarded here — only detected signals are returned.
   return reply(200, { repo: `${ref.owner}/${ref.repo}`, branch, filesScanned: files.length, answers, evidence });
+}
+
+/* ── Google Drive (shared file / ZIP) ───────────────────────
+   Downloads a publicly-shared Drive file server-side (no OAuth), unzips
+   in memory if it's a .zip, runs the same detectors, and discards the
+   bytes. Folders and private files can't be read → explicit errors. */
+
+function parseDriveUrl(input) {
+  const s = String(input || "");
+  if (!/(drive|docs)\.google\.com/i.test(s)) return null;
+  if (/\/drive\/folders\//.test(s)) return { folder: true };
+  const m = s.match(/\/file\/d\/([A-Za-z0-9_-]+)/) || s.match(/[?&]id=([A-Za-z0-9_-]+)/);
+  if (m) return { id: m[1] };
+  return { unknown: true };
+}
+
+const DRIVE_MAX_BYTES = 15 * 1024 * 1024;
+
+async function driveFetch(id, confirm) {
+  const u = `https://drive.google.com/uc?export=download&id=${id}` + (confirm ? `&confirm=${confirm}` : "");
+  return fetch(u, { redirect: "follow", headers: { "User-Agent": "scale-my-ai" } });
+}
+
+async function scanDrive(id) {
+  let res = await driveFetch(id);
+  if ((res.headers.get("content-type") || "").includes("text/html")) {
+    // Large-file interstitial (virus-scan warning) — retry with confirm token.
+    const html = await res.text();
+    const m = html.match(/confirm=([0-9A-Za-z_-]+)/);
+    res = await driveFetch(id, m ? m[1] : "t");
+    if ((res.headers.get("content-type") || "").includes("text/html")) {
+      return reply(403, { error: "drive-access" }); // not shared publicly / needs login
+    }
+  }
+  if (!res.ok) return reply(404, { error: "drive-access" });
+
+  const ab = await res.arrayBuffer();
+  const bytes = Buffer.from(ab);
+  if (bytes.length === 0) return reply(404, { error: "empty" });
+  if (bytes.length > DRIVE_MAX_BYTES) return reply(413, { error: "too-big" });
+
+  let files = [];
+  const isZip = bytes.length > 3 && bytes[0] === 0x50 && bytes[1] === 0x4b;
+  if (isZip) {
+    let entries;
+    try {
+      entries = fflate.unzipSync(new Uint8Array(bytes), {
+        filter: (f) => TEXT_EXT.test(f.name) && !SKIP_PATH.test(f.name) && !/\.min\./i.test(f.name) && f.originalSize < SCAN_MAX_BYTES,
+      });
+    } catch {
+      return reply(400, { error: "bad-zip" });
+    }
+    for (const name of Object.keys(entries).slice(0, SCAN_MAX_FILES)) {
+      files.push({ path: name, content: Buffer.from(entries[name]).toString("utf8") });
+    }
+  } else {
+    // Single file (README / one source file).
+    files.push({ path: "shared-file", content: bytes.toString("utf8").slice(0, SCAN_MAX_BYTES) });
+  }
+  if (files.length === 0) return reply(404, { error: "empty" });
+
+  const { answers, evidence } = detect(files);
+  return reply(200, { repo: "Google Drive", branch: null, filesScanned: files.length, answers, evidence });
 }
 
 exports.handler = async (event) => {

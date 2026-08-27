@@ -46,17 +46,19 @@ export async function scanRepoBackend(url) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url }),
   });
-  if (res.status === 501) {
-    const e = new Error("scan-not-configured");
-    e.code = "not-configured";
-    throw e;
+  let data = {};
+  try {
+    data = await res.json();
+  } catch {
+    /* non-JSON */
   }
   if (!res.ok) {
     const e = new Error(`scan ${res.status}`);
-    e.code = res.status === 404 ? "not-found" : res.status === 502 ? "auth" : "error";
+    // Prefer the backend's explicit error code (e.g. drive-folder, too-big).
+    e.code = data.error || (res.status === 501 ? "not-configured" : res.status === 404 ? "not-found" : "error");
     throw e;
   }
-  return res.json();
+  return data;
 }
 
 export async function loadStats() {

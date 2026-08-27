@@ -63,7 +63,7 @@ const UI = {
   yourRepo: { en: "Your repository", th: "repo ของคุณ" },
   yourProto: { en: "Your prototype", th: "ต้นแบบของคุณ" },
   tellUs: { en: "Tell us about your app", th: "เล่าเกี่ยวกับแอปของคุณ" },
-  ghUrl: { en: "GitHub URL", th: "ลิงก์ GitHub" },
+  ghUrl: { en: "GitHub URL or Google Drive share link", th: "ลิงก์ GitHub หรือลิงก์แชร์ Google Drive" },
   descOpt: { en: "Short description (optional)", th: "คำอธิบายสั้น ๆ (ไม่บังคับ)" },
   descReq: { en: "Describe what you built", th: "อธิบายสิ่งที่คุณสร้าง" },
   descPh: {
@@ -113,12 +113,36 @@ const UI = {
   scanReview: { en: "Review & adjust on the next step.", th: "ตรวจสอบและปรับได้ในขั้นตอนถัดไป" },
   filesScanned: { en: "files scanned", th: "ไฟล์ที่สแกน" },
   errPrivate: {
-    en: "We couldn't read this repo — it may be private or not exist. The public tool only reads public repos. You can make it public, or continue with the questionnaire.",
-    th: "อ่าน repo นี้ไม่ได้ — อาจเป็นแบบส่วนตัวหรือไม่มีอยู่ เครื่องมือสาธารณะอ่านได้เฉพาะ repo สาธารณะ คุณอาจตั้งเป็นสาธารณะ หรือทำแบบสอบถามต่อ",
+    en: "We can't scan this repository — it looks private (or doesn't exist), and this tool can only read public repos. Make it public, or continue with the questionnaire below.",
+    th: "เราสแกน repo นี้ไม่ได้ — ดูเหมือนเป็นแบบส่วนตัว (หรือไม่มีอยู่) และเครื่องมือนี้อ่านได้เฉพาะ repo สาธารณะ กรุณาตั้งเป็นสาธารณะ หรือทำแบบสอบถามด้านล่างต่อ",
+  },
+  errNoAccess: {
+    en: "We can't scan this repository — it's private and this app doesn't have access to it. Make it public, or continue with the questionnaire below.",
+    th: "เราสแกน repo นี้ไม่ได้ — เป็นแบบส่วนตัวและแอปนี้ไม่มีสิทธิ์เข้าถึง กรุณาตั้งเป็นสาธารณะ หรือทำแบบสอบถามด้านล่างต่อ",
+  },
+  errNotConfigured: {
+    en: "We can't scan private repositories on this site — only public ones. Make it public, or continue with the questionnaire below.",
+    th: "เว็บนี้สแกน repo ส่วนตัวไม่ได้ — ได้เฉพาะ repo สาธารณะ กรุณาตั้งเป็นสาธารณะ หรือทำแบบสอบถามด้านล่างต่อ",
   },
   errRate: { en: "GitHub rate limit reached. Try again shortly, or continue with the questionnaire.", th: "ถึงขีดจำกัดการเรียก GitHub ลองใหม่อีกครั้ง หรือทำแบบสอบถามต่อ" },
   errInvalid: { en: "That doesn't look like a GitHub URL.", th: "ลิงก์นี้ไม่เหมือน URL ของ GitHub" },
   errScan: { en: "Couldn't scan that repo. You can continue with the questionnaire.", th: "สแกน repo ไม่สำเร็จ คุณทำแบบสอบถามต่อได้" },
+  errUnsupported: {
+    en: "We can only scan a GitHub repo or a shared Google Drive file/ZIP link. That link isn't supported — or continue with the questionnaire below.",
+    th: "เราสแกนได้เฉพาะ GitHub repo หรือลิงก์ไฟล์/ZIP ที่แชร์บน Google Drive ลิงก์นี้ไม่รองรับ — หรือทำแบบสอบถามด้านล่างต่อ",
+  },
+  errDriveFolder: {
+    en: "We can't scan a Google Drive folder — please share a single ZIP of your code instead (Anyone with the link), then paste that file's link.",
+    th: "เราสแกนโฟลเดอร์ Google Drive ไม่ได้ — กรุณาแชร์เป็นไฟล์ ZIP เดียวของโค้ด (ตั้งเป็น ใครก็ได้ที่มีลิงก์) แล้ววางลิงก์ไฟล์นั้น",
+  },
+  errDriveAccess: {
+    en: "We can't access that Drive file — make sure it's shared as 'Anyone with the link', or continue with the questionnaire.",
+    th: "เราเข้าถึงไฟล์ Drive นี้ไม่ได้ — ตรวจสอบว่าแชร์แบบ 'ใครก็ได้ที่มีลิงก์' หรือทำแบบสอบถามต่อ",
+  },
+  errTooBig: {
+    en: "That file is too large to scan (over 15 MB). Try a smaller ZIP, or continue with the questionnaire.",
+    th: "ไฟล์ใหญ่เกินกว่าจะสแกน (เกิน 15 MB) ลองใช้ ZIP ที่เล็กลง หรือทำแบบสอบถามต่อ",
+  },
   continueManual: { en: "Continue with the questionnaire →", th: "ทำแบบสอบถามต่อ →" },
   seeReport: { en: "See my report →", th: "ดูรายงานของฉัน →" },
   notDetected: { en: "Not detected — worth checking", th: "ไม่พบ — ควรตรวจสอบ" },
@@ -588,32 +612,66 @@ function InputScreen({ path, meta, setMeta, target, setTarget, onNext, onScanned
   const [scanErr, setScanErr] = useState(null);
   const [result, setResult] = useState(null);
 
+  // Map a backend error code to an explicit bilingual message.
+  const codeMsg = (code) =>
+    ({
+      "not-configured": UI.errNotConfigured,
+      "not-found": UI.errNoAccess,
+      "github-auth": UI.errNoAccess,
+      auth: UI.errNoAccess,
+      unsupported: UI.errUnsupported,
+      "drive-folder": UI.errDriveFolder,
+      "drive-access": UI.errDriveAccess,
+      "too-big": UI.errTooBig,
+    }[code] || UI.errScan);
+
+  const isGithub = (u) => /(^|\.)github\.com\//i.test(u) || /^[\w.-]+\/[\w.-]+$/.test(u.trim());
+  const isDrive = (u) => /(drive|docs)\.google\.com/i.test(u);
+
   const runScan = async () => {
     setScanState("busy");
     setScanErr(null);
     setResult(null);
+    const url = meta.url.trim();
+
+    // Google Drive (or other non-GitHub) links are scanned server-side only.
+    if (isDrive(url) || (!isGithub(url) && /^https?:\/\//i.test(url))) {
+      if (!hasBackend) { setScanErr(UI.errUnsupported); setScanState("error"); return; }
+      try {
+        const r = await scanRepoBackend(url);
+        setResult(r);
+        setScanState("done");
+      } catch (be) {
+        setScanErr(codeMsg(be.code));
+        setScanState("error");
+      }
+      return;
+    }
+
     try {
-      const r = await scanRepo(meta.url);
+      const r = await scanRepo(url);
       setResult(r);
       setScanState("done");
     } catch (e) {
       const kind = e instanceof RepoAccessError ? e.kind : "error";
-      // Public scan failed because the repo is private/missing — if a
-      // backend token is configured, try the server-side scan.
+      // Private/missing public repo → fall back to the backend (GitHub token).
       if (kind === "private_or_missing" && hasBackend) {
         try {
-          const r = await scanRepoBackend(meta.url);
+          const r = await scanRepoBackend(url);
           setResult(r);
           setScanState("done");
           return;
         } catch (be) {
-          setScanErr(be.code === "not-configured" ? UI.errPrivate : be.code === "auth" ? UI.errPrivate : be.code === "not-found" ? UI.errPrivate : UI.errScan);
+          setScanErr(codeMsg(be.code));
           setScanState("error");
           return;
         }
       }
       setScanErr(
-        kind === "invalid" ? UI.errInvalid : kind === "ratelimited" ? UI.errRate : kind === "private_or_missing" ? UI.errPrivate : UI.errScan
+        kind === "invalid" ? UI.errUnsupported
+          : kind === "ratelimited" ? UI.errRate
+          : kind === "private_or_missing" ? (hasBackend ? UI.errNoAccess : UI.errNotConfigured)
+          : UI.errScan
       );
       setScanState("error");
     }
@@ -629,7 +687,7 @@ function InputScreen({ path, meta, setMeta, target, setTarget, onNext, onScanned
         <>
           <div style={{ marginBottom: 14 }}>
             <Label bi={UI.ghUrl} />
-            <input value={meta.url} onChange={(e) => setMeta({ ...meta, url: e.target.value })} placeholder="https://github.com/you/your-app" style={inputStyle} />
+            <input value={meta.url} onChange={(e) => setMeta({ ...meta, url: e.target.value })} placeholder="https://github.com/you/app  ·  or a Drive file/ZIP share link" style={inputStyle} />
           </div>
 
           {/* consent */}
