@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import {
   SCALES,
   SCALE_LABEL,
@@ -10,9 +11,25 @@ import {
   ROADMAP,
   roadmapIndexForScale,
   architectureForScale,
+  reportToMarkdown,
   DEMO,
 } from "./engine";
 import { explainFindings, hasBackend } from "./api";
+
+function downloadMarkdown(filename, text) {
+  const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+const shareUrl = () =>
+  typeof window !== "undefined" ? window.location.origin + window.location.pathname : "";
 
 const BRAND = {
   name: import.meta.env.VITE_BRAND_NAME ?? "Scale My AI",
@@ -181,8 +198,10 @@ export default function App() {
           <Home
             onPick={(p) => { setPath(p); setView("input"); }}
             onDemo={startDemo}
+            onQR={() => setView("qr")}
           />
         )}
+        {view === "qr" && <ShareQR onBack={() => setView("home")} />}
         {view === "input" && (
           <InputScreen
             path={path}
@@ -215,7 +234,26 @@ export default function App() {
   );
 }
 
-function Home({ onPick, onDemo }) {
+function ShareQR({ onBack }) {
+  const url = shareUrl();
+  return (
+    <div>
+      <Eyebrow>Scan to open</Eyebrow>
+      <h2 style={{ fontSize: 22, fontWeight: 800, margin: "0 0 18px" }}>Share this assessment</h2>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
+        <div style={{ background: "#fff", padding: 18, borderRadius: 16 }}>
+          <QRCodeSVG value={url} size={220} level="M" includeMargin={false} />
+        </div>
+      </div>
+      <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, padding: "11px 13px", fontSize: 13, color: C.mut, wordBreak: "break-all", marginBottom: 18 }}>
+        {url}
+      </div>
+      <Btn ghost onClick={onBack}>← Back</Btn>
+    </div>
+  );
+}
+
+function Home({ onPick, onDemo, onQR }) {
   return (
     <div>
       <Eyebrow>Scaling readiness for AI prototypes</Eyebrow>
@@ -237,6 +275,15 @@ function Home({ onPick, onDemo }) {
       >
         ▶ Try the demo — “AI Assignment Grader” at 10,000 students
       </button>
+
+      <div>
+        <button
+          onClick={onQR}
+          style={{ marginTop: 14, background: "none", border: "none", color: C.faint, fontSize: 12.5, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 3 }}
+        >
+          Show QR code to share →
+        </button>
+      </div>
     </div>
   );
 }
@@ -562,7 +609,26 @@ function Report({ path, meta, answers, target, onAgain }) {
         </div>
       )}
 
-      <Btn ghost onClick={onAgain}>Run another assessment</Btn>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <Btn
+          onClick={() =>
+            downloadMarkdown(
+              "scale-my-ai-assessment.md",
+              reportToMarkdown({
+                appType: path === "repo" ? "repository" : "prototype",
+                description: meta.description,
+                target,
+                scale,
+                risks,
+                fixes,
+              })
+            )
+          }
+        >
+          ↓ Download report (.md)
+        </Btn>
+        <Btn ghost onClick={onAgain}>Run another assessment</Btn>
+      </div>
     </div>
   );
 }
