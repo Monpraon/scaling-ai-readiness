@@ -51,9 +51,9 @@ variable "max_input_chars" {
 }
 
 variable "lambda_reserved_concurrency" {
-  description = "Reserved concurrency cap for the backend Lambda (limits downstream Bedrock spend under a spike). -1 disables the reservation."
+  description = "Reserved concurrency cap for the backend Lambda (limits downstream Bedrock spend under a spike). -1 disables the reservation. Note: a positive value requires your account's concurrency limit to be high enough to leave >=10 unreserved; new/low-limit accounts should keep this at -1."
   type        = number
-  default     = 20
+  default     = -1
 }
 
 variable "api_throttle_rate" {
@@ -89,7 +89,18 @@ variable "allowed_origins" {
 }
 
 variable "enable_frontend_hosting" {
-  description = "If true, provision an S3 bucket + CloudFront distribution to host the built frontend."
+  description = "If true, provision hosting for the built frontend."
   type        = bool
   default     = true
+}
+
+variable "frontend_hosting_mode" {
+  description = "How to host the frontend: \"cloudfront\" (private S3 + CloudFront + HTTPS, recommended) or \"s3_website\" (public S3 website, HTTP only — useful for accounts not yet verified for CloudFront)."
+  type        = string
+  default     = "cloudfront"
+
+  validation {
+    condition     = contains(["cloudfront", "s3_website"], var.frontend_hosting_mode)
+    error_message = "frontend_hosting_mode must be \"cloudfront\" or \"s3_website\"."
+  }
 }

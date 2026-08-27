@@ -21,6 +21,10 @@ allowed_origins = ["*"]
 
 enable_frontend_hosting = true
 
+# "cloudfront" (HTTPS, recommended) or "s3_website" (HTTP, for accounts not
+# yet verified for CloudFront).
+frontend_hosting_mode = "cloudfront"
+
 tags = {
   Environment = "prod"
 }

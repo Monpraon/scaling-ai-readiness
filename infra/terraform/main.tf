@@ -6,6 +6,10 @@ locals {
   account_id  = data.aws_caller_identity.current.account_id
   region      = data.aws_region.current.name
   cors_origin = length(var.allowed_origins) == 1 ? var.allowed_origins[0] : "*"
+
+  host_enabled = var.enable_frontend_hosting
+  host_cf      = var.enable_frontend_hosting && var.frontend_hosting_mode == "cloudfront"
+  host_s3web   = var.enable_frontend_hosting && var.frontend_hosting_mode == "s3_website"
 }
 
 # ─────────────────────────────────────────────────────────
@@ -148,8 +152,6 @@ resource "aws_apigatewayv2_integration" "lambda" {
 
 locals {
   routes = [
-    "POST /responses",
-    "GET /responses/summary",
     "POST /analyze",
   ]
 }
@@ -185,22 +187,59 @@ resource "aws_lambda_permission" "apigw" {
 # ─────────────────────────────────────────────────────────
 
 resource "aws_s3_bucket" "site" {
-  count         = var.enable_frontend_hosting ? 1 : 0
+  count         = local.host_enabled ? 1 : 0
   bucket        = "${local.name}-site-${local.account_id}"
   force_destroy = true
 }
 
+# In cloudfront mode the bucket is fully private (served via OAC).
+# In s3_website mode public read is required, so the block is relaxed.
 resource "aws_s3_bucket_public_access_block" "site" {
-  count                   = var.enable_frontend_hosting ? 1 : 0
+  count                   = local.host_enabled ? 1 : 0
   bucket                  = aws_s3_bucket.site[0].id
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
+  block_public_acls       = local.host_cf
+  block_public_policy     = local.host_cf
+  ignore_public_acls      = local.host_cf
+  restrict_public_buckets = local.host_cf
 }
 
+# ── s3_website mode ───────────────────────────────────────
+
+resource "aws_s3_bucket_website_configuration" "site" {
+  count  = local.host_s3web ? 1 : 0
+  bucket = aws_s3_bucket.site[0].id
+
+  index_document {
+    suffix = "index.html"
+  }
+  # SPA fallback: serve index.html for unknown paths.
+  error_document {
+    key = "index.html"
+  }
+}
+
+resource "aws_s3_bucket_policy" "site_public" {
+  count  = local.host_s3web ? 1 : 0
+  bucket = aws_s3_bucket.site[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "AllowPublicRead"
+      Effect    = "Allow"
+      Principal = "*"
+      Action    = "s3:GetObject"
+      Resource  = "${aws_s3_bucket.site[0].arn}/*"
+    }]
+  })
+
+  depends_on = [aws_s3_bucket_public_access_block.site]
+}
+
+# ── cloudfront mode ───────────────────────────────────────
+
 resource "aws_cloudfront_origin_access_control" "site" {
-  count                             = var.enable_frontend_hosting ? 1 : 0
+  count                             = local.host_cf ? 1 : 0
   name                              = "${local.name}-oac"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
@@ -208,7 +247,7 @@ resource "aws_cloudfront_origin_access_control" "site" {
 }
 
 resource "aws_cloudfront_distribution" "site" {
-  count               = var.enable_frontend_hosting ? 1 : 0
+  count               = local.host_cf ? 1 : 0
   enabled             = true
   default_root_object = "index.html"
   comment             = local.name
@@ -263,7 +302,7 @@ resource "aws_cloudfront_distribution" "site" {
 }
 
 resource "aws_s3_bucket_policy" "site" {
-  count  = var.enable_frontend_hosting ? 1 : 0
+  count  = local.host_cf ? 1 : 0
   bucket = aws_s3_bucket.site[0].id
 
   policy = jsonencode({

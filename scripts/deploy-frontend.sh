@@ -17,8 +17,9 @@ WEB_DIR="$ROOT/web"
 echo "› Reading Terraform outputs…"
 API_BASE="$(terraform -chdir="$TF_DIR" output -raw api_base_url)"
 BUCKET="$(terraform -chdir="$TF_DIR" output -raw frontend_bucket)"
-DIST_ID="$(terraform -chdir="$TF_DIR" output -raw cloudfront_distribution_id)"
-SITE_URL="$(terraform -chdir="$TF_DIR" output -raw cloudfront_domain)"
+SITE_URL="$(terraform -chdir="$TF_DIR" output -raw site_url)"
+# Only present in cloudfront hosting mode.
+DIST_ID="$(terraform -chdir="$TF_DIR" output -raw cloudfront_distribution_id 2>/dev/null || true)"
 
 echo "  API_BASE = $API_BASE"
 echo "  BUCKET   = $BUCKET"
@@ -42,7 +43,9 @@ aws s3 sync "$WEB_DIR/dist/" "s3://$BUCKET/" --delete \
 aws s3 cp "$WEB_DIR/dist/index.html" "s3://$BUCKET/index.html" \
   --cache-control "no-cache"
 
-echo "› Invalidating CloudFront…"
-aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*" >/dev/null
+if [ -n "${DIST_ID:-}" ] && [ "$DIST_ID" != "null" ]; then
+  echo "› Invalidating CloudFront…"
+  aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*" >/dev/null
+fi
 
 echo "✓ Deployed: $SITE_URL"

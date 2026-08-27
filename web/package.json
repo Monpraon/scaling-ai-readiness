@@ -1,9 +1,9 @@
 {
-  "name": "scaling-ai-readiness",
+  "name": "scale-my-ai",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Scaling AI Readiness — a bilingual (TH/EN) self-assessment that shows where an institution sits on the AI capability ladder.",
+  "description": "Scale My AI — assess an AI prototype and get what breaks first, what to fix next, a scaling roadmap, and the AWS architecture for your scale.",
   "license": "MIT",
   "scripts": {
     "dev": "vite",
